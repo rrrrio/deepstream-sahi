@@ -1,0 +1,423 @@
+#!/usr/bin/env python3
+"""
+File: pipeline_common.py
+Description: Shared DeepStream pipeline utilities and SAHI merge logic.
+Author: Yuhao Ding
+"""
+
+import configparser
+import os
+import pathlib
+import sys
+from dataclasses import dataclass
+from typing import Optional
+
+import gi
+
+gi.require_version("Gst", "1.0")
+from gi.repository import Gst
+
+import pyds
+
+MUXER_BATCH_TIMEOUT_USEC = 40000
+GST_CAPS_FEATURES_NVMM = "memory:NVMM"
+
+
+@dataclass
+class MergeConfig:
+    enabled: bool
+    metric: str
+    threshold: float
+    class_agnostic: bool
+
+
+@dataclass
+class PipelineBuildParams:
+    source: str
+    infer_config: str
+    preprocess_config: Optional[str] = None
+    tracker_enabled: bool = False
+    tracker_config: Optional[str] = None
+    display: bool = True
+    publish_annotated: bool = False
+    width: int = 1920
+    height: int = 1080
+    tiled_width: int = 1280
+    tiled_height: int = 720
+    batched_push_timeout: int = MUXER_BATCH_TIMEOUT_USEC
+    pgie_batch_size: int = 0
+    det_interval: int = -1
+
+
+@dataclass
+class PipelineBuildResult:
+    pipeline: Gst.Pipeline
+    pgie: Gst.Element
+    appsink: Optional[Gst.Element]
+
+
+def to_uri(path_or_uri: str) -> str:
+    if "://" in path_or_uri:
+        return path_or_uri
+    return pathlib.Path(path_or_uri).expanduser().resolve().as_uri()
+
+
+def cb_newpad(decodebin, decoder_src_pad, data):
+    caps = decoder_src_pad.get_current_caps()
+    if not caps:
+        return
+
+    gststruct = caps.get_structure(0)
+    gstname = gststruct.get_name()
+    features = caps.get_features(0)
+
+    if "video" in gstname and features.contains(GST_CAPS_FEATURES_NVMM):
+        source_bin = data
+        bin_ghost_pad = source_bin.get_static_pad("src")
+        if not bin_ghost_pad.set_target(decoder_src_pad):
+            sys.stderr.write("Failed to link decoder src pad to source bin ghost pad\n")
+    elif "video" in gstname:
+        sys.stderr.write("Decodebin did not pick an NVMM decoder.\n")
+
+
+def decodebin_child_added(child_proxy, obj, name, user_data):
+    if name.find("decodebin") != -1:
+        obj.connect("child-added", decodebin_child_added, user_data)
+
+
+def create_source_bin(index: int, uri: str):
+    bin_name = f"source-bin-{index:02d}"
+    nbin = Gst.Bin.new(bin_name)
+    if not nbin:
+        return None
+
+    uri_decode_bin = Gst.ElementFactory.make("uridecodebin", f"uri-decode-bin-{index}")
+    if not uri_decode_bin:
+        return None
+
+    uri_decode_bin.set_property("uri", uri)
+    uri_decode_bin.connect("pad-added", cb_newpad, nbin)
+    uri_decode_bin.connect("child-added", decodebin_child_added, nbin)
+
+    Gst.Bin.add(nbin, uri_decode_bin)
+    if not nbin.add_pad(Gst.GhostPad.new_no_target("src", Gst.PadDirection.SRC)):
+        return None
+    return nbin
+
+
+def make_element(factory_name: str, element_name: str):
+    element = Gst.ElementFactory.make(factory_name, element_name)
+    if not element:
+        raise RuntimeError(f"Unable to create element '{element_name}' ({factory_name})")
+    return element
+
+
+def link_elements(*elements):
+    for upstream, downstream in zip(elements[:-1], elements[1:]):
+        if not upstream.link(downstream):
+            raise RuntimeError(f"Unable to link {upstream.get_name()} -> {downstream.get_name()}")
+
+
+def attach_source_to_streammux(source_bin: Gst.Element, streammux: Gst.Element):
+    sinkpad = streammux.request_pad_simple("sink_0")
+    if not sinkpad:
+        raise RuntimeError("Unable to request streammux sink pad")
+    srcpad = source_bin.get_static_pad("src")
+    if not srcpad:
+        raise RuntimeError("Unable to get source bin src pad")
+    if srcpad.link(sinkpad) != Gst.PadLinkReturn.OK:
+        raise RuntimeError("Unable to link source bin to streammux")
+
+
+def configure_streammux(streammux: Gst.Element, params: PipelineBuildParams, uri: str):
+    streammux.set_property("width", params.width)
+    streammux.set_property("height", params.height)
+    streammux.set_property("batch-size", 1)
+    streammux.set_property("batched-push-timeout", params.batched_push_timeout)
+    streammux.set_property("live-source", 1 if uri.startswith(("rtsp://", "rtsps://")) else 0)
+
+
+def configure_primary_gie(
+    pgie: Gst.Element,
+    infer_config: str,
+    pgie_batch_size: int = 0,
+    det_interval: int = -1,
+    input_tensor_meta: bool = False,
+):
+    pgie.set_property("config-file-path", infer_config)
+    if input_tensor_meta:
+        pgie.set_property("input-tensor-meta", True)
+    if pgie_batch_size > 0:
+        pgie.set_property("batch-size", pgie_batch_size)
+    if det_interval >= 0:
+        pgie.set_property("interval", det_interval)
+
+
+def configure_tiler(tiler: Gst.Element, width: int, height: int):
+    tiler.set_property("rows", 1)
+    tiler.set_property("columns", 1)
+    tiler.set_property("width", width)
+    tiler.set_property("height", height)
+
+
+def configure_tracker(tracker: Gst.Element, tracker_config_path: str):
+    def _set_if_supported(prop_name, value):
+        if tracker.find_property(prop_name) is not None:
+            tracker.set_property(prop_name, value)
+
+    config = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
+    if not config.read(tracker_config_path):
+        raise FileNotFoundError(f"Unable to read tracker config: {tracker_config_path}")
+    if "tracker" not in config:
+        raise ValueError("Tracker config missing [tracker] section")
+
+    tracker_section = config["tracker"]
+    if "tracker-width" in tracker_section:
+        _set_if_supported("tracker-width", tracker_section.getint("tracker-width"))
+    if "tracker-height" in tracker_section:
+        _set_if_supported("tracker-height", tracker_section.getint("tracker-height"))
+    if "gpu-id" in tracker_section:
+        _set_if_supported("gpu-id", tracker_section.getint("gpu-id"))
+    if "ll-lib-file" in tracker_section:
+        _set_if_supported("ll-lib-file", tracker_section.get("ll-lib-file"))
+    if "ll-config-file" in tracker_section:
+        _set_if_supported("ll-config-file", tracker_section.get("ll-config-file"))
+    if "enable-batch-process" in tracker_section:
+        _set_if_supported("enable-batch-process", tracker_section.getint("enable-batch-process"))
+    if "enable-past-frame" in tracker_section:
+        _set_if_supported("enable-past-frame", tracker_section.getint("enable-past-frame"))
+
+
+def add_output_branches(
+    pipeline: Gst.Pipeline,
+    upstream: Gst.Element,
+    display: bool,
+    publish_annotated: bool,
+) -> Optional[Gst.Element]:
+    tee = make_element("tee", "tee-output")
+    queue_display = make_element("queue", "queue-display")
+    sink = make_element("nveglglessink", "display-sink") if display else make_element("fakesink", "display-sink")
+
+    pipeline.add(tee)
+    pipeline.add(queue_display)
+    pipeline.add(sink)
+
+    sink.set_property("sync", False)
+    sink.set_property("qos", False)
+
+    if not upstream.link(tee):
+        raise RuntimeError(f"Unable to link {upstream.get_name()} -> {tee.get_name()}")
+    if not tee.link(queue_display):
+        raise RuntimeError("Unable to link tee -> display queue")
+    if not queue_display.link(sink):
+        raise RuntimeError("Unable to link display queue -> sink")
+
+    appsink = None
+    if publish_annotated:
+        queue_annotated = make_element("queue", "queue-annotated")
+        nvconv_annotated = make_element("nvvideoconvert", "nvconv-annotated")
+        caps_rgba = make_element("capsfilter", "caps-rgba")
+        videoconv = make_element("videoconvert", "videoconv-annotated")
+        caps_bgr = make_element("capsfilter", "caps-bgr")
+        appsink = make_element("appsink", "annotated-appsink")
+
+        caps_rgba.set_property("caps", Gst.Caps.from_string("video/x-raw,format=RGBA"))
+        caps_bgr.set_property("caps", Gst.Caps.from_string("video/x-raw,format=BGR"))
+        appsink.set_property("emit-signals", True)
+        appsink.set_property("sync", False)
+        appsink.set_property("drop", True)
+        appsink.set_property("max-buffers", 1)
+
+        for element in [queue_annotated, nvconv_annotated, caps_rgba, videoconv, caps_bgr, appsink]:
+            pipeline.add(element)
+
+        if not tee.link(queue_annotated):
+            raise RuntimeError("Unable to link tee -> annotated queue")
+        link_elements(queue_annotated, nvconv_annotated, caps_rgba, videoconv, caps_bgr, appsink)
+
+    return appsink
+
+
+def bbox_to_xyxy(obj_meta):
+    left = float(obj_meta.rect_params.left)
+    top = float(obj_meta.rect_params.top)
+    width = float(obj_meta.rect_params.width)
+    height = float(obj_meta.rect_params.height)
+    return [left, top, left + width, top + height]
+
+
+def intersection_area(box_a, box_b):
+    x_left = max(box_a[0], box_b[0])
+    y_top = max(box_a[1], box_b[1])
+    x_right = min(box_a[2], box_b[2])
+    y_bottom = min(box_a[3], box_b[3])
+    if x_right <= x_left or y_bottom <= y_top:
+        return 0.0
+    return (x_right - x_left) * (y_bottom - y_top)
+
+
+def box_area(box):
+    width = max(0.0, box[2] - box[0])
+    height = max(0.0, box[3] - box[1])
+    return width * height
+
+
+def overlap_metric(box_a, box_b, metric: str):
+    inter = intersection_area(box_a, box_b)
+    if inter <= 0.0:
+        return 0.0
+    area_a = box_area(box_a)
+    area_b = box_area(box_b)
+    if metric == "iou":
+        union = area_a + area_b - inter
+        return 0.0 if union <= 0.0 else inter / union
+    smaller = min(area_a, area_b)
+    return 0.0 if smaller <= 0.0 else inter / smaller
+
+
+def union_box(box_a, box_b):
+    return [
+        min(box_a[0], box_b[0]),
+        min(box_a[1], box_b[1]),
+        max(box_a[2], box_b[2]),
+        max(box_a[3], box_b[3]),
+    ]
+
+
+def greedy_nmm_indices(detections, metric: str, threshold: float, class_agnostic: bool):
+    if not detections:
+        return {}
+
+    order = sorted(
+        range(len(detections)),
+        key=lambda i: (
+            -detections[i]["confidence"],
+            detections[i]["bbox"][0],
+            detections[i]["bbox"][1],
+            detections[i]["bbox"][2],
+            detections[i]["bbox"][3],
+        ),
+    )
+
+    suppressed = set()
+    keep_to_merge = {}
+
+    for current_idx in order:
+        if current_idx in suppressed:
+            continue
+
+        current = detections[current_idx]
+        current_box = current["bbox"]
+        merge_list = []
+
+        for cand_idx in order:
+            if cand_idx == current_idx or cand_idx in suppressed:
+                continue
+
+            candidate = detections[cand_idx]
+            if not class_agnostic and candidate["class_id"] != current["class_id"]:
+                continue
+            if candidate["confidence"] > current["confidence"]:
+                continue
+            if candidate["confidence"] == current["confidence"]:
+                if tuple(candidate["bbox"]) > tuple(current_box):
+                    continue
+
+            if overlap_metric(current_box, candidate["bbox"], metric) >= threshold:
+                merge_list.append(cand_idx)
+                suppressed.add(cand_idx)
+
+        keep_to_merge[current_idx] = merge_list
+
+    return keep_to_merge
+
+
+def merge_frame_detections(frame_meta, merge_cfg: MergeConfig):
+    detections = []
+    l_obj = frame_meta.obj_meta_list
+    while l_obj is not None:
+        try:
+            obj_meta = pyds.NvDsObjectMeta.cast(l_obj.data)
+        except StopIteration:
+            break
+
+        detections.append(
+            {
+                "obj_meta": obj_meta,
+                "class_id": int(obj_meta.class_id),
+                "confidence": float(obj_meta.confidence),
+                "bbox": bbox_to_xyxy(obj_meta),
+            }
+        )
+
+        try:
+            l_obj = l_obj.next
+        except StopIteration:
+            break
+
+    if len(detections) <= 1:
+        return
+
+    keep_to_merge = greedy_nmm_indices(
+        detections,
+        metric=merge_cfg.metric,
+        threshold=merge_cfg.threshold,
+        class_agnostic=merge_cfg.class_agnostic,
+    )
+
+    if not keep_to_merge:
+        return
+
+    merged_indices = set()
+    for keep_idx, merge_list in keep_to_merge.items():
+        keep_det = detections[keep_idx]
+        keep_bbox = keep_det["bbox"]
+        keep_conf = keep_det["confidence"]
+        keep_class = keep_det["class_id"]
+
+        for merge_idx in merge_list:
+            candidate = detections[merge_idx]
+            if overlap_metric(keep_bbox, candidate["bbox"], merge_cfg.metric) < merge_cfg.threshold:
+                continue
+            keep_bbox = union_box(keep_bbox, candidate["bbox"])
+            if candidate["confidence"] > keep_conf:
+                keep_conf = candidate["confidence"]
+                keep_class = candidate["class_id"]
+            merged_indices.add(merge_idx)
+
+        keep_det["bbox"] = keep_bbox
+        keep_det["confidence"] = keep_conf
+        keep_det["class_id"] = keep_class
+
+    for keep_idx in keep_to_merge.keys():
+        keep_det = detections[keep_idx]
+        obj_meta = keep_det["obj_meta"]
+        x1, y1, x2, y2 = keep_det["bbox"]
+        obj_meta.rect_params.left = float(x1)
+        obj_meta.rect_params.top = float(y1)
+        obj_meta.rect_params.width = float(max(0.0, x2 - x1))
+        obj_meta.rect_params.height = float(max(0.0, y2 - y1))
+        obj_meta.class_id = int(keep_det["class_id"])
+        obj_meta.confidence = float(keep_det["confidence"])
+
+        obj_meta.detector_bbox_info.org_bbox_coords.left = obj_meta.rect_params.left
+        obj_meta.detector_bbox_info.org_bbox_coords.top = obj_meta.rect_params.top
+        obj_meta.detector_bbox_info.org_bbox_coords.width = obj_meta.rect_params.width
+        obj_meta.detector_bbox_info.org_bbox_coords.height = obj_meta.rect_params.height
+
+    for idx in merged_indices:
+        pyds.nvds_remove_obj_meta_from_frame(frame_meta, detections[idx]["obj_meta"])
+
+
+def read_ini(path: str):
+    parser = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
+    if not parser.read(path):
+        raise FileNotFoundError(f"Unable to read config file: {path}")
+    return parser
+
+
+def resolve_path(base_file: str, maybe_relative: str) -> str:
+    expanded = os.path.expanduser(maybe_relative)
+    if os.path.isabs(expanded):
+        return expanded
+    return os.path.abspath(os.path.join(os.path.dirname(base_file), expanded))

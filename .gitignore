@@ -1,0 +1,18 @@
+# ROS2
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+
+# Runtime / artifacts
+*.engine
+*.onnx
+*.mp4
+*.avi
+
+# IDE
+.vscode/
+.idea/
