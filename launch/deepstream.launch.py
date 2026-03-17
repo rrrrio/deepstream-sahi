@@ -33,6 +33,10 @@ def generate_launch_description():
             DeclareLaunchArgument("tiled_width", default_value="1280"),
             DeclareLaunchArgument("tiled_height", default_value="720"),
             DeclareLaunchArgument("batched_push_timeout", default_value="40000"),
+            DeclareLaunchArgument("slice_width", default_value="640"),
+            DeclareLaunchArgument("slice_height", default_value="640"),
+            DeclareLaunchArgument("overlap_h", default_value="0.2"),
+            DeclareLaunchArgument("overlap_v", default_value="0.2"),
             Node(
                 package="deepstream",
                 executable="deepstream_node",
@@ -60,6 +64,10 @@ def generate_launch_description():
                         "tiled_width": LaunchConfiguration("tiled_width"),
                         "tiled_height": LaunchConfiguration("tiled_height"),
                         "batched_push_timeout": LaunchConfiguration("batched_push_timeout"),
+                        "slice_width": LaunchConfiguration("slice_width"),
+                        "slice_height": LaunchConfiguration("slice_height"),
+                        "overlap_h": LaunchConfiguration("overlap_h"),
+                        "overlap_v": LaunchConfiguration("overlap_v"),
                     }
                 ],
             ),

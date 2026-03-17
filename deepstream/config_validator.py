@@ -2,6 +2,7 @@
 """
 File: config_validator.py
 Description: Runtime validation helpers for DeepStream infer/preprocess/tracker configs.
+             Supports both static preprocess config and dynamic generation (config=None).
 Author: Yuhao Ding
 """
 
@@ -137,10 +138,15 @@ def validate_runtime_configs(
     validate_infer_config(infer_config, logger=logger)
 
     if mode == "sahi":
-        if not preprocess_config:
-            raise ValueError("preprocess_config is required in sahi mode")
-        validate_preprocess_config(preprocess_config)
-        validate_sahi_compat(preprocess_config, infer_config, logger=logger)
+        if preprocess_config:
+            # Static config provided — validate it
+            validate_preprocess_config(preprocess_config)
+            validate_sahi_compat(preprocess_config, infer_config, logger=logger)
+        else:
+            _log_info(
+                logger,
+                "No static preprocess config — ROIs will be generated dynamically from slice parameters.",
+            )
 
     if tracker_enabled:
         if not tracker_config:

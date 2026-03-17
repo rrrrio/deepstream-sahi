@@ -91,4 +91,4 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
         publish_annotated=params.publish_annotated,
     )
 
-    return PipelineBuildResult(pipeline=pipeline, pgie=pgie, appsink=appsink)
+    return PipelineBuildResult(pipeline=pipeline, pgie=pgie, appsink=appsink, has_native_postprocess=False)

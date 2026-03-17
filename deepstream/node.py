@@ -2,6 +2,9 @@
 """
 File: node.py
 Description: ROS2 entry node for running DeepStream in base or SAHI mode.
+             When C plugins (nvsahipreprocess / nvsahipostprocess) are available,
+             the pipeline runs entirely in native code. Otherwise falls back to
+             Python probe-based NMM and dynamic config generation.
 Author: Yuhao Ding
 """
 
@@ -47,6 +50,7 @@ class DeepStreamNode(Node):
         self._bus_thread = None
         self._running = False
         self._merge_cfg = None
+        self._use_python_merge = False
 
         self._declare_parameters()
         self._resolve_runtime_config()
@@ -74,6 +78,10 @@ class DeepStreamNode(Node):
         self.declare_parameter("tiled_width", 1280)
         self.declare_parameter("tiled_height", 720)
         self.declare_parameter("batched_push_timeout", 40000)
+        self.declare_parameter("slice_width", 640)
+        self.declare_parameter("slice_height", 640)
+        self.declare_parameter("overlap_h", 0.2)
+        self.declare_parameter("overlap_v", 0.2)
 
     def _resolve_runtime_config(self):
         self.mode = str(self.get_parameter("mode").value).strip().lower()
@@ -90,12 +98,14 @@ class DeepStreamNode(Node):
             if self.mode == "sahi"
             else f"{share_dir}/config/config_infer_primary_yolo11.txt"
         )
-        default_preprocess = f"{share_dir}/config/config_preprocess_sahi.txt"
         default_tracker = f"{share_dir}/config/deepstream_tracker_config.txt"
 
         infer_config = str(self.get_parameter("infer_config").value).strip() or default_infer
-        preprocess_config = str(self.get_parameter("preprocess_config").value).strip() or default_preprocess
+        preprocess_config_raw = str(self.get_parameter("preprocess_config").value).strip()
         tracker_config = str(self.get_parameter("tracker_config").value).strip() or default_tracker
+
+        # preprocess_config is now optional — empty means dynamic generation
+        preprocess_config = preprocess_config_raw or None
 
         self.tracker_enabled = bool(self.get_parameter("tracker_enabled").value)
         self.display = bool(self.get_parameter("display").value)
@@ -118,10 +128,15 @@ class DeepStreamNode(Node):
             class_agnostic=False,
         )
 
+        slice_width = int(self.get_parameter("slice_width").value)
+        slice_height = int(self.get_parameter("slice_height").value)
+        overlap_h = float(self.get_parameter("overlap_h").value)
+        overlap_v = float(self.get_parameter("overlap_v").value)
+
         self.pipeline_params = PipelineBuildParams(
             source=self.source,
             infer_config=infer_config,
-            preprocess_config=preprocess_config if self.mode == "sahi" else None,
+            preprocess_config=preprocess_config,
             tracker_enabled=self.tracker_enabled,
             tracker_config=tracker_config,
             display=self.display,
@@ -133,6 +148,11 @@ class DeepStreamNode(Node):
             batched_push_timeout=int(self.get_parameter("batched_push_timeout").value),
             pgie_batch_size=int(self.get_parameter("pgie_batch_size").value),
             det_interval=int(self.get_parameter("det_interval").value),
+            slice_width=slice_width,
+            slice_height=slice_height,
+            overlap_h=overlap_h,
+            overlap_v=overlap_v,
+            merge_config=self._merge_cfg,
         )
 
         validate_runtime_configs(
@@ -190,6 +210,13 @@ class DeepStreamNode(Node):
         self._pgie = result.pgie
         self._appsink = result.appsink
 
+        # Decide merge strategy: native C++ plugin vs Python probe fallback
+        self._use_python_merge = self._merge_cfg.enabled and not result.has_native_postprocess
+        if result.has_native_postprocess:
+            self.get_logger().info("Using native nvsahipostprocess for NMM (C++ plugin)")
+        elif self._merge_cfg.enabled:
+            self.get_logger().info("Using Python probe fallback for NMM")
+
         pgie_src_pad = self._pgie.get_static_pad("src")
         if not pgie_src_pad:
             raise RuntimeError("Unable to get PGIE src pad")
@@ -235,7 +262,8 @@ class DeepStreamNode(Node):
         if not batch_meta:
             return Gst.PadProbeReturn.OK
 
-        if self._merge_cfg.enabled:
+        # Python merge only when native postprocess is not in the pipeline
+        if self._use_python_merge:
             pyds.nvds_acquire_meta_lock(batch_meta)
             try:
                 for frame_meta in self._iter_frames(batch_meta):

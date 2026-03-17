@@ -13,6 +13,9 @@ __pycache__/
 *.mp4
 *.avi
 
+# Plugin build artifacts
+plugins/build/
+
 # IDE
 .vscode/
 .idea/
