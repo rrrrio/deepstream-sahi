@@ -1,0 +1,23 @@
+deepstream_node:
+  ros__parameters:
+    mode: sahi
+    sources: [argus://0, argus://1, argus://2]
+    source_names: [camera_0, camera_1, camera_2]
+    file_loop: false
+    camera_fps: 30
+    width: 1920
+    height: 1080
+    slice_width: 640
+    slice_height: 640
+    overlap_h: 0.2
+    overlap_v: 0.2
+    pgie_batch_size: 1
+    det_interval: 2
+    merge_enabled: true
+    merge_metric: ios
+    merge_threshold: 0.5
+    tracker_enabled: true
+    display: true
+    publish_detections: false
+    publish_annotated: false
+    publish_best_target: false

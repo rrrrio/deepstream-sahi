@@ -1,0 +1,24 @@
+deepstream_node:
+  ros__parameters:
+    mode: sahi
+    sources: [/dev/video2, /dev/video1, /dev/video0]
+    source_names: [camera_0, camera_1, camera_2]
+    file_loop: false
+    camera_fps: 30
+    v4l2_pixel_format: UYVY
+    width: 1920
+    height: 1080
+    slice_width: 640
+    slice_height: 640
+    overlap_h: 0.2
+    overlap_v: 0.2
+    pgie_batch_size: 1
+    det_interval: 2
+    merge_enabled: true
+    merge_metric: ios
+    merge_threshold: 0.5
+    tracker_enabled: true
+    display: false
+    publish_detections: false
+    publish_annotated: false
+    publish_best_target: false
