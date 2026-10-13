@@ -18,11 +18,16 @@ def _dims(value_info):
 def test_yolov11s_onnx_has_dynamic_batch_and_raw_detection_output():
     model_path = REPO_ROOT / "models" / "yolo11s.onnx"
     if not model_path.is_file():
-        pytest.skip("run scripts/fetch_yolov11s_onnx.sh to install the model asset")
+        pytest.skip(
+            "run scripts/fetch_yolov11s_onnx.sh to install the model asset"
+        )
 
     model = onnx.load(model_path)
     assert model.graph.input[0].name == "images"
-    assert _dims(model.graph.input[0]) == ["batch", 3, 640, 640]
+    assert _dims(model.graph.input[0]) in (
+        ["batch", 3, 640, 640],
+        ["batch", 3, "height", "width"],
+    )
     assert model.graph.output[0].name == "output0"
     assert _dims(model.graph.output[0]) == ["batch", 84, "anchors"]
 
@@ -46,7 +51,11 @@ def test_yolov11s_configs_match_assets_and_custom_parser(config_name):
     assert prop["output-blob-names"] == "output0"
     assert prop["custom-lib-path"] == "../lib/libnvdsinfer_yolov11s.so"
 
-    labels = (REPO_ROOT / "models" / "coco80.txt").read_text(encoding="utf-8").splitlines()
+    labels = (
+        (REPO_ROOT / "models" / "coco80.txt")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
     assert len(labels) == 80
     assert labels[0] == "person"
     assert labels[-1] == "toothbrush"

@@ -6,7 +6,7 @@ REPO_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 MODEL_PATH="${REPO_ROOT}/models/yolo11s.onnx"
 MODEL_URL=${YOLO11S_ONNX_URL:-https://huggingface.co/unileon-robotics/YOLO11-ONNX/resolve/main/dynamic/yolo11s.onnx}
 YOLO11S_PROXY=${YOLO11S_PROXY:-http://192.168.10.20:6152}
-MODEL_SHA256=d98bbe0162cd882d6ad1305ea5ced6413a2819adfcf019de1740aa94c04254d0
+MODEL_SHA256=f750b6dbdfb7346ce2f109246c9d1950d030904daab3d49bf2942d4772ce69df
 
 fail() { printf 'fetch_yolov11s_onnx: %s\n' "$1" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || fail "curl is required"

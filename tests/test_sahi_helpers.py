@@ -49,7 +49,9 @@ def test_1080p_trafficcamnet_profile_produces_ten_rois():
 
     assert len(rois) == 10
     assert rois[-1] == (0, 0, 1920, 1080)
-    assert all(width == 960 and height == 544 for _, _, width, height in rois[:-1])
+    assert all(
+        width == 960 and height == 544 for _, _, width, height in rois[:-1]
+    )
 
 
 def test_1080p_yolov11s_profile_produces_nine_rois():
@@ -57,7 +59,9 @@ def test_1080p_yolov11s_profile_produces_nine_rois():
 
     assert len(rois) == 9
     assert rois[-1] == (0, 0, 1920, 1080)
-    assert all(width == 640 and height == 640 for _, _, width, height in rois[:-1])
+    assert all(
+        width == 640 and height == 640 for _, _, width, height in rois[:-1]
+    )
 
 
 def test_sahi_rois_have_expected_overlap_and_stay_in_frame():
@@ -67,8 +71,12 @@ def test_sahi_rois_have_expected_overlap_and_stay_in_frame():
         assert 0 <= left <= 1920 - width
         assert 0 <= top <= 1080 - height
 
-    horizontal = sorted({left for left, top, width, height in rois[:-1] if top == 0})
-    vertical = sorted({top for left, top, width, height in rois[:-1] if left == 0})
+    horizontal = sorted(
+        {left for left, top, width, height in rois[:-1] if top == 0}
+    )
+    vertical = sorted(
+        {top for left, top, width, height in rois[:-1] if left == 0}
+    )
     assert horizontal == [0, 768, 960]
     assert vertical == [0, 436, 536]
 
@@ -94,7 +102,10 @@ def test_ntp_timestamp_conversion_uses_nanoseconds():
 
 
 def test_runtime_infer_config_uses_writable_batch_specific_engine(tmp_path):
-    from deepstream.config_validator import prepare_runtime_infer_config, read_ini
+    from deepstream.config_validator import (
+        prepare_runtime_infer_config,
+        read_ini,
+    )
 
     model = tmp_path / "model.onnx"
     labels = tmp_path / "labels.txt"
@@ -122,11 +133,16 @@ def test_runtime_infer_config_uses_writable_batch_specific_engine(tmp_path):
 
     assert runtime.getint("batch-size") == 30
     assert runtime["onnx-file"] == str(model)
-    assert runtime["model-engine-file"].endswith("model.onnx_b30_gpu0_int8.engine")
+    assert runtime["model-engine-file"].endswith(
+        "model.onnx_b30_gpu0_int8.engine"
+    )
 
 
 def test_runtime_preprocess_config_matches_active_roi_batch(tmp_path):
-    from deepstream.config_validator import prepare_runtime_preprocess_config, read_ini
+    from deepstream.config_validator import (
+        prepare_runtime_preprocess_config,
+        read_ini,
+    )
 
     source_config = tmp_path / "preprocess.txt"
     source_config.write_text(
@@ -148,8 +164,13 @@ def test_runtime_preprocess_config_matches_active_roi_batch(tmp_path):
     assert runtime["network-input-shape"] == "10;3;544;960"
 
 
-def test_runtime_preprocess_config_expands_pools_for_all_tensor_batches(tmp_path):
-    from deepstream.config_validator import prepare_runtime_preprocess_config, read_ini
+def test_runtime_preprocess_config_expands_pools_for_all_tensor_batches(
+    tmp_path,
+):
+    from deepstream.config_validator import (
+        prepare_runtime_preprocess_config,
+        read_ini,
+    )
 
     source_config = tmp_path / "preprocess.txt"
     source_config.write_text(
@@ -199,7 +220,9 @@ def test_pipeline_params_reject_missing_sources_before_building():
     )
 
     with pytest.raises(ValueError, match="at least one source"):
-        normalize_pipeline_build_params(PipelineBuildParams(infer_config="/tmp/infer.txt"))
+        normalize_pipeline_build_params(
+            PipelineBuildParams(infer_config="/tmp/infer.txt")
+        )
 
 
 class _FakePad:
@@ -261,7 +284,12 @@ def test_three_source_streammux_and_tiler_configuration(monkeypatch):
         "attach-sys-ts": True,
         "sync-inputs": False,
     }
-    assert tiler.properties == {"rows": 2, "columns": 2, "width": 1280, "height": 720}
+    assert tiler.properties == {
+        "rows": 2,
+        "columns": 2,
+        "width": 1280,
+        "height": 720,
+    }
 
     source = _FakeElement("source")
     monkeypatch.setattr(
@@ -276,7 +304,10 @@ def test_three_source_streammux_and_tiler_configuration(monkeypatch):
 
 
 def test_live_source_marks_streammux_live():
-    from deepstream.pipeline_common import PipelineBuildParams, configure_streammux
+    from deepstream.pipeline_common import (
+        PipelineBuildParams,
+        configure_streammux,
+    )
 
     params = PipelineBuildParams(
         infer_config="/tmp/infer.txt",
@@ -330,7 +361,12 @@ def test_tracker_tensor_meta_is_configured_only_when_requested(tmp_path):
     config.write_text("[tracker]\ntracker-width=640\n", encoding="utf-8")
     tracker = _FakeElement(
         "tracker",
-        {"tracker-width", "input-tensor-meta", "tensor-meta-gie-id", "display-tracking-id"},
+        {
+            "tracker-width",
+            "input-tensor-meta",
+            "tensor-meta-gie-id",
+            "display-tracking-id",
+        },
     )
 
     configure_tracker(
@@ -449,7 +485,9 @@ def test_uri_source_bin_registers_recursive_decodebin_callback(monkeypatch):
         raising=False,
     )
 
-    source_bin = pipeline_common.create_uri_source_bin(0, "file:///tmp/input.mp4", True)
+    source_bin = pipeline_common.create_uri_source_bin(
+        0, "file:///tmp/input.mp4", True
+    )
 
     assert source_bin is not None
     assert [signal for signal, _callback, _data in callbacks] == [

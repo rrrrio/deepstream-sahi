@@ -1,6 +1,10 @@
 import pytest
 
-from deepstream.source_utils import is_live_source, is_v4l2_source, v4l2_device_path
+from deepstream.source_utils import (
+    is_live_source,
+    is_v4l2_source,
+    v4l2_device_path,
+)
 
 
 source_utils = pytest.importorskip("deepstream.source_utils")
@@ -58,7 +62,10 @@ def test_validates_source_and_name_arrays():
         "",
         ["argus://0", "argus://1", "argus://2"],
         ["camera_0", "camera_1", "camera_2"],
-    ) == (["argus://0", "argus://1", "argus://2"], ["camera_0", "camera_1", "camera_2"])
+    ) == (
+        ["argus://0", "argus://1", "argus://2"],
+        ["camera_0", "camera_1", "camera_2"],
+    )
 
     with pytest.raises(ValueError):
         source_utils.normalize_source_config("", ["a", "b"], ["only-one-name"])

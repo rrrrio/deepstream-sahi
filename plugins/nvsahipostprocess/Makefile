@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Yuhao Ding <d346863528@163.com>
+# SPDX-License-Identifier: LicenseRef-NvidiaDeepStreamEULA
+#
+# nvsahipostprocess — SAHI GreedyNMM post-process plugin for DeepStream
+# v1.2: spatial indexing, mask merge, OpenMP parallelism
+
+CUDA_VER?=
+ifeq ($(CUDA_VER),)
+  $(error "CUDA_VER is not set")
+endif
+
+CXX:= g++
+
+SRCS:= gstnvsahipostprocess.cpp
+INCS:= $(wildcard *.h)
+LIB:=libnvdsgst_sahipostprocess.so
+
+DS_ROOT:=/opt/nvidia/deepstream/deepstream
+
+CFLAGS+= -fPIC -std=c++17 -Wall -Werror -O2 \
+	 -I /usr/local/cuda-$(CUDA_VER)/include \
+	 -I $(DS_ROOT)/sources/includes \
+	 -fopenmp
+
+GST_INSTALL_DIR?=$(DS_ROOT)/lib/gst-plugins/
+LIB_INSTALL_DIR?=$(DS_ROOT)/lib/
+
+LIBS := -shared -Wl,-no-undefined \
+	-L$(LIB_INSTALL_DIR) -lnvdsgst_meta -lnvds_meta \
+	-Wl,-rpath,$(LIB_INSTALL_DIR) \
+	-lgomp
+
+OBJS:= $(SRCS:.cpp=.o)
+
+PKGS:= gstreamer-1.0 gstreamer-base-1.0 gstreamer-video-1.0
+CFLAGS+=$(shell pkg-config --cflags $(PKGS))
+LIBS+=$(shell pkg-config --libs $(PKGS))
+
+all: $(LIB)
+
+%.o: %.cpp $(INCS) Makefile
+	$(CXX) -c -o $@ $(CFLAGS) $<
+
+$(LIB): $(OBJS) Makefile
+	$(CXX) -o $@ $(OBJS) $(LIBS)
+
+install: $(LIB)
+	cp -rv $(LIB) $(GST_INSTALL_DIR)
+
+clean:
+	rm -rf $(OBJS) $(LIB)

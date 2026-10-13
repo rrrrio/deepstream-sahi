@@ -78,7 +78,7 @@ flowchart LR
 | --- | --- |
 | `.venv/` | 使用系统 site-packages 的 Python 虚拟环境。 |
 | `.local/lib/gstreamer-1.0/` | SAHI GStreamer 插件。 |
-| `.deps/` | lgoix 源码和 pip 缓存。 |
+| `.deps/` | 本地构建和 pip 缓存。 |
 | `.state/` | 环境快照和验证记录。 |
 | `.colcon/` | ROS 2 构建、安装和日志输出。 |
 
@@ -99,13 +99,11 @@ CUDA、DeepStream、Python 和 `pyds` 必须相互匹配。仓库脚本不会替
 
 #### 构建输入
 
-`scripts/build_lgoix_plugins.sh` 默认从 `/workspace/deepstream-sahi-lgoix` 读取 DeepStream 7.1 lgoix 源码，并要求提交：
+native SAHI 插件源码位于仓库的 `plugins/nvsahipreprocess` 和
+`plugins/nvsahipostprocess`，构建时只依赖本机 CUDA、GStreamer 和 DeepStream
+开发文件。
 
-```text
-114a5c66075e842b1a1dd23b40ef5541fc7bcb7a
-```
-
-脚本只构建以下两个插件：
+`scripts/build_sahi_plugins.sh` 只构建以下两个插件：
 
 ```text
 nvsahipreprocess

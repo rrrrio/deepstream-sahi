@@ -51,7 +51,7 @@ SAHI 使用固定的 native plugin。缺少 `nvsahipreprocess` 或 `nvsahipostpr
 ```bash
 ./scripts/capture_environment.sh
 ./scripts/install_inplace.sh
-./scripts/build_lgoix_plugins.sh
+./scripts/build_sahi_plugins.sh
 ./scripts/fetch_yolov11s_onnx.sh
 ./scripts/build_yolov11s_parser.sh
 source scripts/env.sh

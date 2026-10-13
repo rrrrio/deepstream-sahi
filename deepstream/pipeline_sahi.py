@@ -35,18 +35,18 @@ def _require_property(element, name, value):
     if element.find_property(name) is None:
         raise RuntimeError(
             f"{element.get_name()} does not expose required property '{name}'. "
-            "Check that the pinned lgoix SAHI plugin is loaded."
+            "Check that the repository native SAHI plugin is loaded."
         )
     element.set_property(name, value)
 
 
 def _setup_native_preprocess(params):
-    """Create the pinned lgoix SAHI preprocessor and configure its public API."""
+    """Create the repository native SAHI preprocessor and configure its API."""
     preprocess = try_make_element("nvsahipreprocess", "sahi-preprocess")
     if preprocess is None:
         raise RuntimeError(
             "Required GStreamer plugin 'nvsahipreprocess' is unavailable. "
-            "Run scripts/build_lgoix_plugins.sh and source scripts/env.sh."
+            "Run scripts/build_sahi_plugins.sh and source scripts/env.sh."
         )
     if not params.preprocess_config:
         raise ValueError("preprocess_config is required for native SAHI mode")
@@ -61,13 +61,13 @@ def _setup_native_preprocess(params):
 
 
 def _setup_native_postprocess(params):
-    """Create the pinned lgoix NMM postprocessor."""
+    """Create the repository native NMM postprocessor."""
     merge_cfg = params.merge_config
     postprocess = try_make_element("nvsahipostprocess", "sahi-postprocess")
     if postprocess is None:
         raise RuntimeError(
             "Required GStreamer plugin 'nvsahipostprocess' is unavailable. "
-            "Run scripts/build_lgoix_plugins.sh and source scripts/env.sh."
+            "Run scripts/build_sahi_plugins.sh and source scripts/env.sh."
         )
 
     enabled = bool(merge_cfg and merge_cfg.enabled)
@@ -166,7 +166,9 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
         input_tensor_meta=True,
     )
     if visual_output:
-        configure_tiler(tiler, params.tiled_width, params.tiled_height, len(params.sources))
+        configure_tiler(
+            tiler, params.tiled_width, params.tiled_height, len(params.sources)
+        )
     if tracker and params.tracker_config:
         configure_tracker(tracker, params.tracker_config)
     if tracker_caps:
@@ -188,13 +190,17 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
         post_pgie = queue_post
 
     if tracker:
-        link_elements(post_pgie, tracker_convert, tracker_caps, tracker, queue_tracker)
+        link_elements(
+            post_pgie, tracker_convert, tracker_caps, tracker, queue_tracker
+        )
         post_tracker = queue_tracker
     else:
         post_tracker = post_pgie
 
     if visual_output:
-        link_elements(post_tracker, tiler, queue4, nvvidconv, queue5, nvosd, queue6)
+        link_elements(
+            post_tracker, tiler, queue4, nvvidconv, queue5, nvosd, queue6
+        )
         output_upstream = queue6
     else:
         output_upstream = post_tracker

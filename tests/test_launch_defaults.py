@@ -7,7 +7,11 @@ import sys
 import types
 
 
-LAUNCH_FILE = pathlib.Path(__file__).resolve().parents[1] / "launch" / "deepstream.launch.py"
+LAUNCH_FILE = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "launch"
+    / "deepstream.launch.py"
+)
 
 
 def _launch_defaults():
@@ -16,12 +20,17 @@ def _launch_defaults():
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        if not isinstance(node.func, ast.Name) or node.func.id != "DeclareLaunchArgument":
+        if (
+            not isinstance(node.func, ast.Name)
+            or node.func.id != "DeclareLaunchArgument"
+        ):
             continue
         if not node.args or not isinstance(node.args[0], ast.Constant):
             continue
         for keyword in node.keywords:
-            if keyword.arg == "default_value" and isinstance(keyword.value, ast.Constant):
+            if keyword.arg == "default_value" and isinstance(
+                keyword.value, ast.Constant
+            ):
                 values[node.args[0].value] = keyword.value.value
     return values
 
@@ -55,7 +64,10 @@ def _load_launch_module(monkeypatch):
     launch_actions = types.ModuleType("launch.actions")
     launch_substitutions = types.ModuleType("launch.substitutions")
     launch.LaunchDescription = lambda actions: actions
-    launch_actions.DeclareLaunchArgument = lambda *args, **kwargs: (args, kwargs)
+    launch_actions.DeclareLaunchArgument = lambda *args, **kwargs: (
+        args,
+        kwargs,
+    )
     launch_actions.OpaqueFunction = lambda **kwargs: kwargs
     launch_substitutions.LaunchConfiguration = _FakeLaunchConfiguration
     launch_substitutions.PathJoinSubstitution = lambda parts: parts
@@ -68,7 +80,9 @@ def _load_launch_module(monkeypatch):
     launch_ros.substitutions = launch_ros_substitutions
     monkeypatch.setitem(sys.modules, "launch", launch)
     monkeypatch.setitem(sys.modules, "launch.actions", launch_actions)
-    monkeypatch.setitem(sys.modules, "launch.substitutions", launch_substitutions)
+    monkeypatch.setitem(
+        sys.modules, "launch.substitutions", launch_substitutions
+    )
     monkeypatch.setitem(sys.modules, "launch_ros", launch_ros)
     monkeypatch.setitem(sys.modules, "launch_ros.actions", launch_ros_actions)
     monkeypatch.setitem(
@@ -76,7 +90,9 @@ def _load_launch_module(monkeypatch):
         "launch_ros.substitutions",
         launch_ros_substitutions,
     )
-    spec = importlib.util.spec_from_file_location("deepstream_launch", LAUNCH_FILE)
+    spec = importlib.util.spec_from_file_location(
+        "deepstream_launch", LAUNCH_FILE
+    )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -117,7 +133,9 @@ def test_empty_launch_overrides_leave_profile_values_unchanged(monkeypatch):
 def test_explicit_launch_overrides_are_appended_after_profile(monkeypatch):
     module = _load_launch_module(monkeypatch)
 
-    context = _launch_context({"display": "true", "publish_detections": "false"})
+    context = _launch_context(
+        {"display": "true", "publish_detections": "false"}
+    )
     node = module._create_node(context)[0]
 
     parameters = node.kwargs["parameters"]
@@ -149,4 +167,9 @@ def test_preflight_can_be_disabled_for_non_jetson_development(monkeypatch):
     module = _load_launch_module(monkeypatch)
     monkeypatch.setattr(module, "_jetson_gpu_devices_available", lambda: False)
 
-    assert module._preflight_runtime(_launch_context({"runtime_preflight": "false"})) == []
+    assert (
+        module._preflight_runtime(
+            _launch_context({"runtime_preflight": "false"})
+        )
+        == []
+    )

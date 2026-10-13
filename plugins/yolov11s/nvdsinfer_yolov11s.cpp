@@ -7,8 +7,8 @@
  */
 
 #include <algorithm>
-#include <cstdlib>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <vector>
 
@@ -36,18 +36,20 @@ extern "C" bool NvDsInferParseYolo11(
   const NvDsInferLayerInfo &layer = outputLayersInfo[0];
   const NvDsInferDims &dims = layer.inferDims;
   if (dims.numDims != 2) {
-    std::cerr << "NvDsInferParseYolo11 expects [channels,candidates] output, got "
-              << dims.numDims << " dimensions." << std::endl;
+    std::cerr
+        << "NvDsInferParseYolo11 expects [channels,candidates] output, got "
+        << dims.numDims << " dimensions." << std::endl;
     return false;
   }
 
-  const unsigned int configured_classes =
-      static_cast<unsigned int>(detectionParams.perClassPreclusterThreshold.size());
+  const unsigned int configured_classes = static_cast<unsigned int>(
+      detectionParams.perClassPreclusterThreshold.size());
   if (configured_classes == 0U || networkInfo.width == 0U ||
       networkInfo.height == 0U) {
-    std::cerr << "NvDsInferParseYolo11 requires configured classes and non-zero "
-                 "network dimensions."
-              << std::endl;
+    std::cerr
+        << "NvDsInferParseYolo11 requires configured classes and non-zero "
+           "network dimensions."
+        << std::endl;
     return false;
   }
   const unsigned int dim0 = static_cast<unsigned int>(dims.d[0]);
@@ -71,7 +73,8 @@ extern "C" bool NvDsInferParseYolo11(
   }
 
   const float *data = static_cast<const float *>(layer.buffer);
-  const bool debug_enabled = std::getenv("DEEPSTREAM_SAHI_PARSER_DEBUG") != nullptr;
+  const bool debug_enabled =
+      std::getenv("DEEPSTREAM_SAHI_PARSER_DEBUG") != nullptr;
   float highest_score = 0.0F;
   unsigned int accepted = 0;
   const auto value_at = [data, candidates, channels, channel_major](
@@ -127,8 +130,9 @@ extern "C" bool NvDsInferParseYolo11(
   }
   if (debug_enabled) {
     std::cerr << "NvDsInferParseYolo11: dims=[" << dim0 << "," << dim1
-              << "], candidates=" << candidates << ", max_score="
-              << highest_score << ", accepted=" << accepted << std::endl;
+              << "], candidates=" << candidates
+              << ", max_score=" << highest_score << ", accepted=" << accepted
+              << std::endl;
   }
   return true;
 }

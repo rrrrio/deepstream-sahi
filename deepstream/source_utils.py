@@ -28,7 +28,9 @@ def argus_sensor_id(source: str) -> int:
     parsed = urlparse(value)
     raw_id = parsed.netloc or parsed.path.lstrip("/")
     if not raw_id.isdigit():
-        raise ValueError(f"Argus source must use argus://<sensor-id>: {source!r}")
+        raise ValueError(
+            f"Argus source must use argus://<sensor-id>: {source!r}"
+        )
     return int(raw_id)
 
 
@@ -73,7 +75,9 @@ def normalize_source_config(
     source_names: Iterable[str],
 ) -> Tuple[List[str], List[str]]:
     """Resolve legacy and multi-source parameters into validated lists."""
-    resolved_sources = [str(value).strip() for value in sources if str(value).strip()]
+    resolved_sources = [
+        str(value).strip() for value in sources if str(value).strip()
+    ]
     if not resolved_sources and source.strip():
         resolved_sources = [source.strip()]
     if not resolved_sources:
@@ -81,7 +85,9 @@ def normalize_source_config(
 
     resolved_names = [str(value).strip() for value in source_names]
     if not resolved_names:
-        resolved_names = [f"camera_{index}" for index in range(len(resolved_sources))]
+        resolved_names = [
+            f"camera_{index}" for index in range(len(resolved_sources))
+        ]
     if len(resolved_names) != len(resolved_sources):
         raise ValueError("source_names must have the same length as sources")
     if any(not name for name in resolved_names):
@@ -89,7 +95,9 @@ def normalize_source_config(
     if len(set(resolved_names)) != len(resolved_names):
         raise ValueError("source_names must be unique")
     invalid_names = [
-        name for name in resolved_names if not SOURCE_NAME_PATTERN.fullmatch(name)
+        name
+        for name in resolved_names
+        if not SOURCE_NAME_PATTERN.fullmatch(name)
     ]
     if invalid_names:
         raise ValueError(

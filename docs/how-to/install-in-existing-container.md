@@ -52,23 +52,10 @@ wheel 必须匹配 Python、Jetson、CUDA 和 DeepStream 版本。
 
 ## 3. 构建 SAHI 插件
 
-脚本默认从 `/workspace/deepstream-sahi-lgoix` 读取 lgoix DeepStream 7.1 源码，并固定提交：
-
-```text
-114a5c66075e842b1a1dd23b40ef5541fc7bcb7a
-```
-
-执行：
+插件源码已经纳入当前仓库，直接执行：
 
 ```bash
-./scripts/build_lgoix_plugins.sh
-```
-
-如果路径不同：
-
-```bash
-LGOIX_SOURCE_DIR=/path/to/deepstream-sahi-lgoix \
-./scripts/build_lgoix_plugins.sh
+./scripts/build_sahi_plugins.sh
 ```
 
 构建结果位于 `.local/lib/gstreamer-1.0`。加载环境并检查：

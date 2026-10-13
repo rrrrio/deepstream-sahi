@@ -9,10 +9,10 @@ import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PARSER_DIR = REPO_ROOT / "plugins" / "yolov11s"
-DEEPSTREAM_DIR = pathlib.Path(
-    "/opt/nvidia/deepstream/deepstream"
+DEEPSTREAM_DIR = pathlib.Path("/opt/nvidia/deepstream/deepstream")
+PARSER_HEADER = (
+    DEEPSTREAM_DIR / "sources" / "includes" / "nvdsinfer_custom_impl.h"
 )
-PARSER_HEADER = DEEPSTREAM_DIR / "sources" / "includes" / "nvdsinfer_custom_impl.h"
 
 
 @pytest.mark.skipif(

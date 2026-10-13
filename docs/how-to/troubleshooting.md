@@ -27,6 +27,11 @@ test -f config/deepstream_tracker_config.txt
 
 YOLOv11s 默认资产可通过 `./scripts/fetch_yolov11s_onnx.sh` 下载。下载失败时设置 `HTTP_PROXY` 与 `HTTPS_PROXY`，并保留脚本中的 SHA256 校验。`libnvdsinfer_yolov11s.so` 缺失时运行 `./scripts/build_yolov11s_parser.sh`；该步骤需要 `libnvinfer-dev` 和 `libnvonnxparsers-dev`。
 
+如果错误显示 `.colcon/install/deepstream/share/deepstream/models/yolo11s.onnx`
+不存在，先确认仓库中的 `models/yolo11s.onnx` 已通过下载脚本校验。运行时会在
+安装包没有模型时回退到仓库资产；修改模型或依赖后重新执行 colcon 构建，并删除
+`.colcon/build/deepstream/models` 中指向旧 `.download` 文件的断链。
+
 ## `gst-inspect-1.0` 找不到 SAHI 插件
 
 ```bash

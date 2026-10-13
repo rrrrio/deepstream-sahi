@@ -19,7 +19,9 @@ _OPTIONAL_OVERRIDES = (
 
 def _jetson_gpu_devices_available():
     """Return whether the Jetson device nodes required by DeepStream are mapped."""
-    return all(os.path.exists(path) for path in ("/dev/nvmap", "/dev/nvhost-gpu"))
+    return all(
+        os.path.exists(path) for path in ("/dev/nvmap", "/dev/nvhost-gpu")
+    )
 
 
 def _parse_bool(value):
@@ -55,7 +57,9 @@ def _create_node(context):
 
 def _preflight_runtime(context):
     """Reject launches that cannot produce NVMM frames before starting an OSD."""
-    enabled = _parse_bool(LaunchConfiguration("runtime_preflight").perform(context))
+    enabled = _parse_bool(
+        LaunchConfiguration("runtime_preflight").perform(context)
+    )
     if not enabled or _jetson_gpu_devices_available():
         return []
 

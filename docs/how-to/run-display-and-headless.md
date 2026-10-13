@@ -29,7 +29,7 @@ ros2 launch deepstream deepstream.launch.py \
 
 无窗口模式仍应持续处理 source，并可用 `ros2 topic echo` 或 `ros2 topic hz` 检查输出。不要用没有窗口作为检测或 CSI 已通过的证据。
 
-当前 lgoix native SAHI allocator 在 Jetson 上使用 EGL-backed surface，因此即使
+当前 native SAHI allocator 在 Jetson 上使用 EGL-backed surface，因此即使
 `display:=false` 且末端为 `fakesink`，仍需要一个有效的 NVIDIA X11/EGL socket。
 `scripts/run_sim_3cam_headless.sh` 会在启动前检查该 socket，但不会创建 OSD 窗口。
 

@@ -13,7 +13,7 @@ def test_env_script_loads_when_nounset_is_enabled():
             "bash",
             "-eu",
             "-c",
-            "source scripts/env.sh; test -n \"$DEEPSTREAM_SAHI_ROOT\"",
+            'source scripts/env.sh; test -n "$DEEPSTREAM_SAHI_ROOT"',
         ],
         cwd=REPO_ROOT,
         check=False,
@@ -47,6 +47,8 @@ def test_simulation_launcher_loads_environment_once():
         encoding="utf-8"
     )
 
-    assert launcher.count("source \"${REPO_ROOT}/.colcon/install/setup.bash\"") == 0
-    assert "source \"${SCRIPT_DIR}/env.sh\"" in launcher
+    assert (
+        launcher.count('source "${REPO_ROOT}/.colcon/install/setup.bash"') == 0
+    )
+    assert 'source "${SCRIPT_DIR}/env.sh"' in launcher
     assert 'check_runtime.sh" --require-display' in launcher

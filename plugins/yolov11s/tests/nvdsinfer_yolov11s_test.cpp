@@ -25,7 +25,7 @@ bool same(float actual, float expected) {
 }
 
 NvDsInferLayerInfo layer_for(std::vector<float> &values, unsigned int dim0,
-                              unsigned int dim1) {
+                             unsigned int dim1) {
   NvDsInferLayerInfo layer{};
   layer.buffer = values.data();
   layer.inferDims.numDims = 2;
@@ -48,9 +48,9 @@ void check_channel_major_and_clipping() {
       320.0F, 10.0F,  // cx
       240.0F, 20.0F,  // cy
       100.0F, 30.0F,  // width
-      80.0F, 40.0F,   // height
-      0.90F, 0.60F,   // class 0
-      0.20F, 0.75F,   // class 1
+      80.0F,  40.0F,  // height
+      0.90F,  0.60F,  // class 0
+      0.20F,  0.75F,  // class 1
   };
   NvDsInferNetworkInfo network{640U, 480U, 3U};
   std::vector<NvDsInferObjectDetectionInfo> detections;
@@ -76,7 +76,7 @@ void check_transposed_and_threshold() {
   // [candidates, channels], each candidate is contiguous.
   std::vector<float> values = {
       600.0F, 450.0F, 100.0F, 100.0F, 0.50F, 0.70F,
-      100.0F, 100.0F, 20.0F, 20.0F, 0.49F, 0.69F,
+      100.0F, 100.0F, 20.0F,  20.0F,  0.49F, 0.69F,
   };
   NvDsInferNetworkInfo network{640U, 480U, 3U};
   std::vector<NvDsInferObjectDetectionInfo> detections;

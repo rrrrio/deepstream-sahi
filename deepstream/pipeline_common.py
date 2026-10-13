@@ -82,7 +82,9 @@ class PipelineBuildResult:
     has_native_postprocess: bool = False
 
 
-def normalize_pipeline_build_params(params: PipelineBuildParams) -> PipelineBuildParams:
+def normalize_pipeline_build_params(
+    params: PipelineBuildParams,
+) -> PipelineBuildParams:
     """Return builder-safe source lists, retaining the legacy ``source`` API."""
     sources, source_names = normalize_source_config(
         params.source,
@@ -136,7 +138,9 @@ def to_uri(path_or_uri: str) -> str:
 
 
 def cb_newpad(decodebin, decoder_src_pad, data):
-    caps = decoder_src_pad.get_current_caps() or decoder_src_pad.query_caps(None)
+    caps = decoder_src_pad.get_current_caps() or decoder_src_pad.query_caps(
+        None
+    )
     if not caps:
         return
 
@@ -148,7 +152,9 @@ def cb_newpad(decodebin, decoder_src_pad, data):
         source_bin = data
         bin_ghost_pad = source_bin.get_static_pad("src")
         if not bin_ghost_pad.set_target(decoder_src_pad):
-            sys.stderr.write("Failed to link decoder src pad to source bin ghost pad\n")
+            sys.stderr.write(
+                "Failed to link decoder src pad to source bin ghost pad\n"
+            )
     elif "video" in gstname:
         sys.stderr.write("Decodebin did not pick an NVMM decoder.\n")
 
@@ -160,7 +166,9 @@ def decodebin_child_added(child_proxy, obj, name, user_data):
 
 def cb_camera_newpad(decodebin, decoder_src_pad, converter):
     """Link decoded camera video to the converter once decodebin exposes it."""
-    caps = decoder_src_pad.get_current_caps() or decoder_src_pad.query_caps(None)
+    caps = decoder_src_pad.get_current_caps() or decoder_src_pad.query_caps(
+        None
+    )
     if not caps or caps.get_size() == 0:
         return
     if "video" not in caps.get_structure(0).get_name():
@@ -169,7 +177,9 @@ def cb_camera_newpad(decodebin, decoder_src_pad, converter):
     sink_pad = converter.get_static_pad("sink")
     if sink_pad and not sink_pad.is_linked():
         if decoder_src_pad.link(sink_pad) != Gst.PadLinkReturn.OK:
-            sys.stderr.write("Failed to link camera decoder to nvvideoconvert.\n")
+            sys.stderr.write(
+                "Failed to link camera decoder to nvvideoconvert.\n"
+            )
 
 
 def create_v4l2_source_bin(
@@ -189,7 +199,9 @@ def create_v4l2_source_bin(
     input_capsfilter = Gst.ElementFactory.make(
         "capsfilter", f"camera-input-caps-{index}"
     )
-    converter = Gst.ElementFactory.make("nvvideoconvert", f"camera-convert-{index}")
+    converter = Gst.ElementFactory.make(
+        "nvvideoconvert", f"camera-convert-{index}"
+    )
     capsfilter = Gst.ElementFactory.make("capsfilter", f"camera-caps-{index}")
     if not all((camera, input_capsfilter, converter, capsfilter)):
         return None
@@ -210,13 +222,17 @@ def create_v4l2_source_bin(
 
     for element in (camera, input_capsfilter, converter, capsfilter):
         source_bin.add(element)
-    if not camera.link(input_capsfilter) or not input_capsfilter.link(converter):
+    if not camera.link(input_capsfilter) or not input_capsfilter.link(
+        converter
+    ):
         return None
     if not converter.link(capsfilter):
         return None
 
     source_pad = capsfilter.get_static_pad("src")
-    if not source_pad or not source_bin.add_pad(Gst.GhostPad.new("src", source_pad)):
+    if not source_pad or not source_bin.add_pad(
+        Gst.GhostPad.new("src", source_pad)
+    ):
         return None
     return source_bin
 
@@ -234,7 +250,9 @@ def local_file_path(source: str) -> str:
 
 def is_h264_mp4_file(source: str) -> bool:
     """Return whether the simulation source can use the zero-audio NVDEC path."""
-    return is_file_source(source) and local_file_path(source).lower().endswith(".mp4")
+    return is_file_source(source) and local_file_path(source).lower().endswith(
+        ".mp4"
+    )
 
 
 def cb_mp4_demux_pad(demux, demux_src_pad, parser):
@@ -271,7 +289,9 @@ def create_h264_file_source_bin(index: int, source: str):
     demux.connect("pad-added", cb_mp4_demux_pad, parser)
 
     source_pad = decoder.get_static_pad("src")
-    if not source_pad or not source_bin.add_pad(Gst.GhostPad.new("src", source_pad)):
+    if not source_pad or not source_bin.add_pad(
+        Gst.GhostPad.new("src", source_pad)
+    ):
         return None
     return source_bin
 
@@ -288,7 +308,9 @@ def create_argus_source_bin(
     if not source_bin:
         return None
 
-    camera = Gst.ElementFactory.make("nvarguscamerasrc", f"argus-camera-{index}")
+    camera = Gst.ElementFactory.make(
+        "nvarguscamerasrc", f"argus-camera-{index}"
+    )
     capsfilter = Gst.ElementFactory.make("capsfilter", f"argus-caps-{index}")
     if not camera or not capsfilter:
         return None
@@ -308,7 +330,9 @@ def create_argus_source_bin(
         return None
 
     source_pad = capsfilter.get_static_pad("src")
-    if not source_pad or not source_bin.add_pad(Gst.GhostPad.new("src", source_pad)):
+    if not source_pad or not source_bin.add_pad(
+        Gst.GhostPad.new("src", source_pad)
+    ):
         return None
     return source_bin
 
@@ -332,7 +356,9 @@ def create_uri_source_bin(index: int, source: str, file_loop: bool):
     uri_source.connect("child-added", decodebin_child_added, source_bin)
 
     source_bin.add(uri_source)
-    if not source_bin.add_pad(Gst.GhostPad.new_no_target("src", Gst.PadDirection.SRC)):
+    if not source_bin.add_pad(
+        Gst.GhostPad.new_no_target("src", Gst.PadDirection.SRC)
+    ):
         return None
     return source_bin
 
@@ -364,7 +390,9 @@ def create_source_bin(index: int, source: str, params: PipelineBuildParams):
 def make_element(factory_name: str, element_name: str):
     element = Gst.ElementFactory.make(factory_name, element_name)
     if not element:
-        raise RuntimeError(f"Unable to create element '{element_name}' ({factory_name})")
+        raise RuntimeError(
+            f"Unable to create element '{element_name}' ({factory_name})"
+        )
     return element
 
 
@@ -376,7 +404,9 @@ def try_make_element(factory_name: str, element_name: str):
 def link_elements(*elements):
     for upstream, downstream in zip(elements[:-1], elements[1:]):
         if not upstream.link(downstream):
-            raise RuntimeError(f"Unable to link {upstream.get_name()} -> {downstream.get_name()}")
+            raise RuntimeError(
+                f"Unable to link {upstream.get_name()} -> {downstream.get_name()}"
+            )
 
 
 def attach_source_to_streammux(
@@ -400,7 +430,8 @@ def configure_streammux(streammux: Gst.Element, params: PipelineBuildParams):
     streammux.set_property("batch-size", len(params.sources))
     streammux.set_property("batched-push-timeout", params.batched_push_timeout)
     streammux.set_property(
-        "live-source", 1 if any(is_live_source(source) for source in params.sources) else 0
+        "live-source",
+        1 if any(is_live_source(source) for source in params.sources) else 0,
     )
     if streammux.find_property("attach-sys-ts") is not None:
         streammux.set_property("attach-sys-ts", True)
@@ -433,7 +464,9 @@ def compute_tiler_layout(source_count: int) -> Tuple[int, int]:
     return rows, columns
 
 
-def configure_tiler(tiler: Gst.Element, width: int, height: int, source_count: int):
+def configure_tiler(
+    tiler: Gst.Element, width: int, height: int, source_count: int
+):
     rows, columns = compute_tiler_layout(source_count)
     tiler.set_property("rows", rows)
     tiler.set_property("columns", columns)
@@ -453,25 +486,38 @@ def configure_tracker(
 
     config = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
     if not config.read(tracker_config_path):
-        raise FileNotFoundError(f"Unable to read tracker config: {tracker_config_path}")
+        raise FileNotFoundError(
+            f"Unable to read tracker config: {tracker_config_path}"
+        )
     if "tracker" not in config:
         raise ValueError("Tracker config missing [tracker] section")
 
     tracker_section = config["tracker"]
     if "tracker-width" in tracker_section:
-        _set_if_supported("tracker-width", tracker_section.getint("tracker-width"))
+        _set_if_supported(
+            "tracker-width", tracker_section.getint("tracker-width")
+        )
     if "tracker-height" in tracker_section:
-        _set_if_supported("tracker-height", tracker_section.getint("tracker-height"))
+        _set_if_supported(
+            "tracker-height", tracker_section.getint("tracker-height")
+        )
     if "gpu-id" in tracker_section:
         _set_if_supported("gpu-id", tracker_section.getint("gpu-id"))
     if "ll-lib-file" in tracker_section:
         _set_if_supported("ll-lib-file", tracker_section.get("ll-lib-file"))
     if "ll-config-file" in tracker_section:
-        _set_if_supported("ll-config-file", tracker_section.get("ll-config-file"))
+        _set_if_supported(
+            "ll-config-file", tracker_section.get("ll-config-file")
+        )
     if "enable-batch-process" in tracker_section:
-        _set_if_supported("enable-batch-process", tracker_section.getint("enable-batch-process"))
+        _set_if_supported(
+            "enable-batch-process",
+            tracker_section.getint("enable-batch-process"),
+        )
     if "enable-past-frame" in tracker_section:
-        _set_if_supported("enable-past-frame", tracker_section.getint("enable-past-frame"))
+        _set_if_supported(
+            "enable-past-frame", tracker_section.getint("enable-past-frame")
+        )
     if "compute-hw" in tracker_section:
         _set_if_supported("compute-hw", tracker_section.getint("compute-hw"))
     if input_tensor_meta:
@@ -488,7 +534,11 @@ def add_output_branches(
 ) -> Optional[Gst.Element]:
     tee = make_element("tee", "tee-output")
     queue_display = make_element("queue", "queue-display")
-    sink = make_element("nv3dsink", "display-sink") if display else make_element("fakesink", "display-sink")
+    sink = (
+        make_element("nv3dsink", "display-sink")
+        if display
+        else make_element("fakesink", "display-sink")
+    )
 
     pipeline.add(tee)
     pipeline.add(queue_display)
@@ -504,7 +554,9 @@ def add_output_branches(
     sink.set_property("qos", False)
 
     if not upstream.link(tee):
-        raise RuntimeError(f"Unable to link {upstream.get_name()} -> {tee.get_name()}")
+        raise RuntimeError(
+            f"Unable to link {upstream.get_name()} -> {tee.get_name()}"
+        )
     if not tee.link(queue_display):
         raise RuntimeError("Unable to link tee -> display queue")
     if not queue_display.link(sink):
@@ -519,19 +571,37 @@ def add_output_branches(
         caps_bgr = make_element("capsfilter", "caps-bgr")
         appsink = make_element("appsink", "annotated-appsink")
 
-        caps_rgba.set_property("caps", Gst.Caps.from_string("video/x-raw,format=RGBA"))
-        caps_bgr.set_property("caps", Gst.Caps.from_string("video/x-raw,format=BGR"))
+        caps_rgba.set_property(
+            "caps", Gst.Caps.from_string("video/x-raw,format=RGBA")
+        )
+        caps_bgr.set_property(
+            "caps", Gst.Caps.from_string("video/x-raw,format=BGR")
+        )
         appsink.set_property("emit-signals", True)
         appsink.set_property("sync", False)
         appsink.set_property("drop", True)
         appsink.set_property("max-buffers", 1)
 
-        for element in [queue_annotated, nvconv_annotated, caps_rgba, videoconv, caps_bgr, appsink]:
+        for element in [
+            queue_annotated,
+            nvconv_annotated,
+            caps_rgba,
+            videoconv,
+            caps_bgr,
+            appsink,
+        ]:
             pipeline.add(element)
 
         if not tee.link(queue_annotated):
             raise RuntimeError("Unable to link tee -> annotated queue")
-        link_elements(queue_annotated, nvconv_annotated, caps_rgba, videoconv, caps_bgr, appsink)
+        link_elements(
+            queue_annotated,
+            nvconv_annotated,
+            caps_rgba,
+            videoconv,
+            caps_bgr,
+            appsink,
+        )
 
     return appsink
 

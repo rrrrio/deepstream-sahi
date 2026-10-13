@@ -91,7 +91,9 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
         input_tensor_meta=False,
     )
     if visual_output:
-        configure_tiler(tiler, params.tiled_width, params.tiled_height, len(params.sources))
+        configure_tiler(
+            tiler, params.tiled_width, params.tiled_height, len(params.sources)
+        )
 
     if tracker and params.tracker_config:
         configure_tracker(tracker, params.tracker_config)
@@ -107,11 +109,15 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
     link_elements(streammux, queue1, pgie, queue2)
     post_tracker = queue2
     if tracker:
-        link_elements(queue2, tracker_convert, tracker_caps, tracker, queue_tracker)
+        link_elements(
+            queue2, tracker_convert, tracker_caps, tracker, queue_tracker
+        )
         post_tracker = queue_tracker
 
     if visual_output:
-        link_elements(post_tracker, tiler, queue3, nvvidconv, queue4, nvosd, queue5)
+        link_elements(
+            post_tracker, tiler, queue3, nvvidconv, queue4, nvosd, queue5
+        )
         output_upstream = queue5
     else:
         output_upstream = post_tracker

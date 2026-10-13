@@ -15,11 +15,18 @@ import pyds
 from .metadata_utils import select_confidence, tracking_id_string
 
 try:
-    from vision_msgs.msg import BoundingBox2D, Detection2D, Detection2DArray, ObjectHypothesisWithPose
+    from vision_msgs.msg import (
+        BoundingBox2D,
+        Detection2D,
+        Detection2DArray,
+        ObjectHypothesisWithPose,
+    )
 
     HAS_VISION_MSGS = True
 except Exception:  # pragma: no cover - runtime dependency varies by machine
-    BoundingBox2D = Detection2D = Detection2DArray = ObjectHypothesisWithPose = None
+    BoundingBox2D = Detection2D = Detection2DArray = (
+        ObjectHypothesisWithPose
+    ) = None
     HAS_VISION_MSGS = False
 
 
@@ -41,7 +48,9 @@ def extract_detections(frame_meta) -> List[Dict]:
             label = str(obj_meta.obj_label)
 
         detector_confidence = float(obj_meta.confidence)
-        tracker_confidence = float(getattr(obj_meta, "tracker_confidence", -1.0))
+        tracker_confidence = float(
+            getattr(obj_meta, "tracker_confidence", -1.0)
+        )
         untracked_id = getattr(pyds, "UNTRACKED_OBJECT_ID", None)
 
         detections.append(

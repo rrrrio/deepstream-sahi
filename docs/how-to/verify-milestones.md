@@ -36,7 +36,7 @@ gst-inspect-1.0 nvsahipostprocess
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q tests
 ```
 
-应覆盖 source 分类、数组校验、ROI 计算、时间戳、tracking confidence、YOLOv11s parser 和三路 profile。当前本地结果为 `50 passed`，有一个 NumPy 弃用警告。
+应覆盖 source 分类、数组校验、ROI 计算、时间戳、tracking confidence、YOLOv11s parser、三路 profile 和原生插件归属检查。当前本地结果为 `53 passed, 1 skipped`；存在依赖版本带来的弃用警告。
 
 ## 4. 构建 ROS 2 包
 
