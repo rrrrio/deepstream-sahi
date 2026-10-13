@@ -15,6 +15,17 @@ __pycache__/
 
 # Plugin build artifacts
 plugins/build/
+plugins/yolov11s/test_yolov11s_parser
+plugins/yolov11s/*.so
+
+# Repository-local environment and build state
+.venv/
+.local/
+.deps/
+.state/
+.colcon/
+.cache/
+execplan/
 
 # IDE
 .vscode/
