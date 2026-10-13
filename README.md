@@ -1,151 +1,130 @@
 # deepstream-sahi
 
-ROS2 DeepStream package (base + SAHI) with optional native C/C++ GStreamer plugins.
+面向 Jetson 的 ROS 2 + NVIDIA DeepStream 三路视频分析包。项目支持文件、RTSP、V4L2 和 Argus CSI 输入，使用 YOLOv11s、SAHI 切片、NMM 合并、tracker、2x2 OSD 以及按相机发布的 ROS 2 检测消息。
 
-Author: **Yuhao Ding**
-License: **MIT**
+英文说明见 [README.en.md](README.en.md)。
 
-## Architecture
+## 数据流
 
-### SAHI Pipeline (with C plugins)
-
-```
-source → streammux → nvsahipreprocess → nvinfer → nvsahipostprocess → nvtracker → nvdsosd → sink
-```
-
-- **nvsahipreprocess**: Computes ROIs dynamically from `slice-width`, `slice-height`, `overlap-h`, `overlap-v` — no static config file needed.
-- **nvsahipostprocess**: Greedy NMM in C++ on `NvDsObjectMeta`, runs as `GstBaseTransform` in-place.
-
-### SAHI Pipeline (Python fallback)
-
-When the C plugins are not compiled/installed, the pipeline falls back to:
-
-```
-source → streammux → nvdspreprocess (auto-generated config) → nvinfer → [Python probe NMM] → nvtracker → nvdsosd → sink
+```text
+文件 / RTSP / V4L2 / Argus x3
+  -> nvstreammux
+  -> nvsahipreprocess
+  -> nvinfer
+  -> nvsahipostprocess
+  -> nvtracker
+  -> ROS 2 metadata probe
+  -> nvmultistreamtiler
+  -> nvdsosd
+  -> nv3dsink 或 fakesink
 ```
 
-The preprocess config is generated dynamically at startup from the slice parameters. The Python probe on `nvinfer src` performs NMM as before.
+SAHI 使用固定的 native plugin。缺少 `nvsahipreprocess` 或 `nvsahipostprocess` 时，程序会明确失败，不会静默切换到旧的 Python 合并路径。
 
-## Contents
+## 目录
 
-- `deepstream_node`: Single runtime node, `mode:=base|sahi`
-- `config/`: DeepStream config files
-- `launch/deepstream.launch.py`: Launch file
-- `plugins/`: Native C/C++ GStreamer plugins (optional)
+- `deepstream/`：ROS 2 节点、source bin 和 DeepStream 管线。
+- `config/sim_3cam_headless.yaml`：三路文件、无可见窗口和检测 topic profile。
+- `config/sim_3cam.yaml`：三路文件和 2x2 OSD profile。
+- `config/csi_3cam.yaml`：三路 Argus CSI profile。
+- `config/v4l2_3cam.yaml`：适用于三路设备均提供 `UYVY 1920x1080@30` 的 V4L2 fallback profile；使用前按设备实际格式调整。
+- `scripts/`：容器安装、运行时检查、相机输入 probe 和环境脚本。
+- `docs/`：教程、操作指南、参考、架构说明和相机输入排障流程。
 
-## Requirements
+## 文档
 
-- ROS2 Humble
-- NVIDIA DeepStream + `pyds`
-- (Optional) `vision_msgs`
+从[文档入口](docs/README.md)按教程、操作指南、参考或解释选择页面。
 
-### For C plugins (optional)
+## 依赖
 
-- DeepStream SDK sources (for headers)
-- GStreamer dev libs (`libgstreamer1.0-dev`)
-- CMake 3.14+
+- Jetson、DeepStream 7.1、CUDA 12.6 和匹配的 NVIDIA runtime。
+- ROS 2 Humble、`vision_msgs` 和 NVIDIA `pyds` 1.2.0。
+- 构建 native plugin 所需的 CUDA、GStreamer 和 TensorRT 开发文件。
+- 文件或 V4L2 输入需要 GPU、EGL/X11 和 `/dev` 映射。
+- Argus CSI 额外需要宿主机能枚举 camera module，并把 `/tmp/argus_socket` 映射到容器。
+- 安装脚本需要可写的容器根文件系统和 root；只读容器不能通过提权变成可写。
 
-## Folder Layout
+## 安装和构建
 
-```
-models/Balloon_V11N_Last.pt.onnx
-models/model_b1_gpu0_fp32.engine    # optional, generated at runtime
-models/labels.txt
-plugins/libnvdsinfer_custom_impl_Yolo.so
-```
-
-## Build
-
-### ROS2 Package
+在容器内从仓库根目录执行：
 
 ```bash
-cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
-colcon build --packages-select deepstream
-source install/setup.bash
+./scripts/capture_environment.sh
+./scripts/install_inplace.sh
+./scripts/build_lgoix_plugins.sh
+./scripts/fetch_yolov11s_onnx.sh
+./scripts/build_yolov11s_parser.sh
+source scripts/env.sh
+python -m colcon --log-base .colcon/log build \
+  --base-paths . \
+  --build-base .colcon/build \
+  --install-base .colcon/install \
+  --symlink-install \
+  --packages-select deepstream
+source .colcon/install/setup.bash
 ```
 
-### C/C++ Plugins (optional)
+详细安装和容器重建要求见[现有容器安装指南](docs/how-to/install-in-existing-container.md)。
+
+## 运行
+
+三路文件无显示运行：
 
 ```bash
-cd plugins
-make
-sudo make install
+./scripts/check_runtime.sh --require-display
+./scripts/run_sim_3cam_headless.sh
 ```
 
-Or with cmake directly:
+三路文件 OSD：
 
 ```bash
-cd plugins && mkdir build && cd build
-cmake .. -DDEEPSTREAM_DIR=/opt/nvidia/deepstream/deepstream
-make -j$(nproc)
-sudo make install
-```
-
-## Run
-
-### Base mode
-
-```bash
-ros2 run deepstream deepstream_node --ros-args \
-  -p mode:=base \
-  -p source:=./samples/input.mp4 \
-  -p display:=false
-```
-
-### SAHI mode (dynamic config — no preprocess config file needed)
-
-```bash
-ros2 run deepstream deepstream_node --ros-args \
-  -p mode:=sahi \
-  -p source:=./samples/input.mp4 \
-  -p slice_width:=1024 \
-  -p slice_height:=1024 \
-  -p overlap_h:=0.2 \
-  -p overlap_v:=0.2 \
-  -p display:=false
-```
-
-### SAHI mode (static preprocess config, backward compatible)
-
-```bash
-ros2 run deepstream deepstream_node --ros-args \
-  -p mode:=sahi \
-  -p source:=./samples/input.mp4 \
-  -p preprocess_config:=config/config_preprocess_sahi.txt \
-  -p display:=false
-```
-
-### Launch
-
-```bash
+./scripts/check_runtime.sh --require-display
 ros2 launch deepstream deepstream.launch.py \
-  mode:=sahi \
-  source:=./samples/input.mp4 \
-  slice_width:=1024 \
-  slice_height:=1024
+  params_file:=config/sim_3cam.yaml \
+  display:=true \
+  publish_detections:=true
 ```
 
-## Parameters
+三路 Argus CSI：
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `mode` | `base` | `base` or `sahi` |
-| `source` | — | Video file path or RTSP URI |
-| `slice_width` | `640` | SAHI slice width (pixels) |
-| `slice_height` | `640` | SAHI slice height (pixels) |
-| `overlap_h` | `0.2` | Horizontal overlap fraction [0, 1) |
-| `overlap_v` | `0.2` | Vertical overlap fraction [0, 1) |
-| `preprocess_config` | — | Static config (empty = auto-generate) |
-| `merge_enabled` | `true` | Enable NMM merge in SAHI mode |
-| `merge_metric` | `ios` | `ios` or `iou` |
-| `merge_threshold` | `0.5` | Overlap threshold for merging |
-| `tracker_enabled` | `false` | Enable nvtracker |
-| `display` | `true` | Show video output |
+```bash
+./scripts/check_runtime.sh --require-argus
+ros2 launch deepstream deepstream.launch.py \
+  params_file:=config/csi_3cam.yaml \
+  display:=false
+```
 
-## Topics
+在启动完整 CSI profile 前，必须逐个验证 `sensor-id=0/1/2`，并确认输出没有 `No cameras available`。`gst-launch-1.0` 在 Argus 错误后可能仍返回 0，不能只看退出码。
 
-- `/deepstream/status` (`std_msgs/String`)
-- `/deepstream/target_pixel` (`geometry_msgs/Point`)
-- `/deepstream/image/annotated` (`sensor_msgs/Image`, optional)
-- `/deepstream/detections` (`vision_msgs/Detection2DArray`, if `vision_msgs` is installed)
+三路 V4L2 fallback：
+
+```bash
+for device in /dev/video0 /dev/video1 /dev/video2; do
+  ./scripts/probe_v4l2_camera.sh "$device" 10
+done
+ros2 launch deepstream deepstream.launch.py \
+  params_file:=config/v4l2_3cam.yaml \
+  display:=false \
+  publish_detections:=false
+```
+
+V4L2 profile 使用设备当前的 `UYVY 1920x1080@30`，转换为 `NV12/NVMM` 后进入 `nvstreammux`。
+
+## 验证边界
+
+本仓库当前的 CSI 前置验证只确认相机数据能进入 `deepstream.launch.py` 所需的输入边界，不把真实推理、检测内容、ROS topic 或 30 分钟稳定性当作相机前置条件。完整命令和预期输出见[三路管线验证手册](docs/how-to/verify-milestones.md)。
+
+相机输入验证按以下顺序进行：先在宿主机确认 sensor、media topology、设备格式和 `nvargus-daemon`，再在容器中确认 GPU、设备节点、Argus socket 和插件，最后逐路验证 Argus，再进入完整 launch。若 Argus 尚未可用但 V4L2 能出帧，可使用 V4L2 profile 验证输入边界；两条路径的通过结论相互独立。
+
+常见问题包括容器缺少 `/tmp/argus_socket`、`No cameras available`、设备树缺少 NVIDIA camera enumerator、camera kernel node 打开失败，以及 V4L2 caps 协商失败。对应检查和处理方式见[CSI 相机输入验证](docs/how-to/verify-csi-camera-input.md)。
+
+## ROS 2 输出
+
+启用 `publish_detections:=true` 后，默认 topic 为：
+
+- `/deepstream/status`。
+- `/deepstream/camera_0/detections`。
+- `/deepstream/camera_1/detections`。
+- `/deepstream/camera_2/detections`。
+
+消息字段和坐标约定见[ROS 2 话题参考](docs/reference/ros2-topics.md)。
