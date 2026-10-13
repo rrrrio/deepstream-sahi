@@ -1,75 +1,91 @@
-"""
-File: deepstream.launch.py
-Description: Launch file for running the deepstream_node with configurable parameters.
-Author: Yuhao Ding
-"""
+"""Launch the DeepStream node from a ROS parameter profile."""
+
+import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
+
+
+_OPTIONAL_OVERRIDES = (
+    "display",
+    "publish_detections",
+    "publish_annotated",
+    "publish_best_target",
+)
+
+
+def _jetson_gpu_devices_available():
+    """Return whether the Jetson device nodes required by DeepStream are mapped."""
+    return all(os.path.exists(path) for path in ("/dev/nvmap", "/dev/nvhost-gpu"))
+
+
+def _parse_bool(value):
+    normalized = value.strip().lower()
+    if normalized in ("true", "1", "yes", "on"):
+        return True
+    if normalized in ("false", "0", "no", "off"):
+        return False
+    raise ValueError(f"Boolean launch override has invalid value: {value!r}")
+
+
+def _create_node(context):
+    """Apply launch overrides only when the caller supplied a non-empty value."""
+    parameters = [LaunchConfiguration("params_file")]
+    overrides = {}
+    for name in _OPTIONAL_OVERRIDES:
+        value = LaunchConfiguration(name).perform(context).strip()
+        if value:
+            overrides[name] = _parse_bool(value)
+    if overrides:
+        parameters.append(overrides)
+
+    return [
+        Node(
+            package="deepstream",
+            executable="deepstream_node",
+            name="deepstream_node",
+            output="screen",
+            parameters=parameters,
+        )
+    ]
+
+
+def _preflight_runtime(context):
+    """Reject launches that cannot produce NVMM frames before starting an OSD."""
+    enabled = _parse_bool(LaunchConfiguration("runtime_preflight").perform(context))
+    if not enabled or _jetson_gpu_devices_available():
+        return []
+
+    raise RuntimeError(
+        "DeepStream cannot start because this container is missing Jetson GPU "
+        "device mappings (/dev/nvmap and /dev/nvhost-gpu). Recreate the "
+        "container with the NVIDIA runtime, then run "
+        "./scripts/check_runtime.sh --require-gpu before launching a pipeline; "
+        "use --require-display as well for OSD or the headless SAHI profile. "
+        "Set runtime_preflight:=false only when using a non-Jetson runtime."
+    )
 
 
 def generate_launch_description():
+    default_params = PathJoinSubstitution(
+        [FindPackageShare("deepstream"), "config", "sim_3cam_headless.yaml"]
+    )
     return LaunchDescription(
         [
-            DeclareLaunchArgument("mode", default_value="base"),
-            DeclareLaunchArgument("source", default_value=""),
-            DeclareLaunchArgument("infer_config", default_value=""),
-            DeclareLaunchArgument("preprocess_config", default_value=""),
-            DeclareLaunchArgument("tracker_enabled", default_value="false"),
-            DeclareLaunchArgument("tracker_config", default_value=""),
-            DeclareLaunchArgument("display", default_value="true"),
-            DeclareLaunchArgument("publish_annotated", default_value="false"),
-            DeclareLaunchArgument("publish_detections", default_value="true"),
-            DeclareLaunchArgument("publish_best_target", default_value="true"),
-            DeclareLaunchArgument("merge_enabled", default_value="true"),
-            DeclareLaunchArgument("merge_metric", default_value="ios"),
-            DeclareLaunchArgument("merge_threshold", default_value="0.5"),
-            DeclareLaunchArgument("det_interval", default_value="-1"),
-            DeclareLaunchArgument("pgie_batch_size", default_value="0"),
-            DeclareLaunchArgument("width", default_value="1920"),
-            DeclareLaunchArgument("height", default_value="1080"),
-            DeclareLaunchArgument("tiled_width", default_value="1280"),
-            DeclareLaunchArgument("tiled_height", default_value="720"),
-            DeclareLaunchArgument("batched_push_timeout", default_value="40000"),
-            DeclareLaunchArgument("slice_width", default_value="640"),
-            DeclareLaunchArgument("slice_height", default_value="640"),
-            DeclareLaunchArgument("overlap_h", default_value="0.2"),
-            DeclareLaunchArgument("overlap_v", default_value="0.2"),
-            Node(
-                package="deepstream",
-                executable="deepstream_node",
-                name="deepstream_node",
-                output="screen",
-                parameters=[
-                    {
-                        "mode": LaunchConfiguration("mode"),
-                        "source": LaunchConfiguration("source"),
-                        "infer_config": LaunchConfiguration("infer_config"),
-                        "preprocess_config": LaunchConfiguration("preprocess_config"),
-                        "tracker_enabled": LaunchConfiguration("tracker_enabled"),
-                        "tracker_config": LaunchConfiguration("tracker_config"),
-                        "display": LaunchConfiguration("display"),
-                        "publish_annotated": LaunchConfiguration("publish_annotated"),
-                        "publish_detections": LaunchConfiguration("publish_detections"),
-                        "publish_best_target": LaunchConfiguration("publish_best_target"),
-                        "merge_enabled": LaunchConfiguration("merge_enabled"),
-                        "merge_metric": LaunchConfiguration("merge_metric"),
-                        "merge_threshold": LaunchConfiguration("merge_threshold"),
-                        "det_interval": LaunchConfiguration("det_interval"),
-                        "pgie_batch_size": LaunchConfiguration("pgie_batch_size"),
-                        "width": LaunchConfiguration("width"),
-                        "height": LaunchConfiguration("height"),
-                        "tiled_width": LaunchConfiguration("tiled_width"),
-                        "tiled_height": LaunchConfiguration("tiled_height"),
-                        "batched_push_timeout": LaunchConfiguration("batched_push_timeout"),
-                        "slice_width": LaunchConfiguration("slice_width"),
-                        "slice_height": LaunchConfiguration("slice_height"),
-                        "overlap_h": LaunchConfiguration("overlap_h"),
-                        "overlap_v": LaunchConfiguration("overlap_v"),
-                    }
-                ],
+            DeclareLaunchArgument(
+                "params_file",
+                default_value=default_params,
+                description="ROS parameter YAML for the DeepStream node",
             ),
+            DeclareLaunchArgument("display", default_value=""),
+            DeclareLaunchArgument("publish_detections", default_value=""),
+            DeclareLaunchArgument("publish_annotated", default_value=""),
+            DeclareLaunchArgument("publish_best_target", default_value=""),
+            DeclareLaunchArgument("runtime_preflight", default_value="true"),
+            OpaqueFunction(function=_preflight_runtime),
+            OpaqueFunction(function=_create_node),
         ]
     )

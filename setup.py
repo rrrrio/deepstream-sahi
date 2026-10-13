@@ -25,6 +25,8 @@ setup(
         (os.path.join("share", package_name), ["package.xml"]),
         (os.path.join("share", package_name, "launch"), glob("launch/*.launch.py")),
         (os.path.join("share", package_name, "config"), glob("config/*")),
+        (os.path.join("share", package_name, "models"), glob("models/*")),
+        (os.path.join("share", package_name, "lib"), glob(".local/lib/libnvdsinfer_yolov11s.so")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,

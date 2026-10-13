@@ -12,6 +12,8 @@ from std_msgs.msg import Header
 
 import pyds
 
+from .metadata_utils import select_confidence, tracking_id_string
+
 try:
     from vision_msgs.msg import BoundingBox2D, Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
@@ -38,11 +40,22 @@ def extract_detections(frame_meta) -> List[Dict]:
         if hasattr(obj_meta, "obj_label") and obj_meta.obj_label:
             label = str(obj_meta.obj_label)
 
+        detector_confidence = float(obj_meta.confidence)
+        tracker_confidence = float(getattr(obj_meta, "tracker_confidence", -1.0))
+        untracked_id = getattr(pyds, "UNTRACKED_OBJECT_ID", None)
+
         detections.append(
             {
                 "class_id": int(obj_meta.class_id),
-                "confidence": float(obj_meta.confidence),
+                "confidence": select_confidence(
+                    detector_confidence,
+                    tracker_confidence,
+                ),
                 "label": label,
+                "tracking_id": tracking_id_string(
+                    int(getattr(obj_meta, "object_id", -1)),
+                    untracked_id,
+                ),
                 "bbox": [left, top, left + width, top + height],
             }
         )
@@ -85,7 +98,7 @@ def _fill_bbox(bbox_msg: BoundingBox2D, det: Dict):
 
 
 def _fill_hypothesis(hyp_msg: ObjectHypothesisWithPose, det: Dict):
-    class_id = str(det["class_id"])
+    class_id = det.get("label", "") or str(det["class_id"])
     score = float(det["confidence"])
 
     if hasattr(hyp_msg, "hypothesis"):
@@ -119,7 +132,7 @@ def build_detection_array_msg(
         if hasattr(det_msg, "header"):
             det_msg.header = Header(stamp=stamp, frame_id=frame_id)
         if hasattr(det_msg, "id"):
-            det_msg.id = det.get("label", "") or str(det["class_id"])
+            det_msg.id = det.get("tracking_id", "")
 
         _fill_bbox(det_msg.bbox, det)
 
@@ -130,6 +143,35 @@ def build_detection_array_msg(
         msg.detections.append(det_msg)
 
     return msg
+
+
+def update_osd_labels(frame_meta, source_name: str):
+    """Set per-object OSD text after tracking and before tiling."""
+    l_obj = frame_meta.obj_meta_list
+    while l_obj is not None:
+        try:
+            obj_meta = pyds.NvDsObjectMeta.cast(l_obj.data)
+        except StopIteration:
+            break
+
+        label = str(getattr(obj_meta, "obj_label", "") or obj_meta.class_id)
+        confidence = select_confidence(
+            float(obj_meta.confidence),
+            float(getattr(obj_meta, "tracker_confidence", -1.0)),
+        )
+        tracking_id = tracking_id_string(
+            int(getattr(obj_meta, "object_id", -1)),
+            getattr(pyds, "UNTRACKED_OBJECT_ID", None),
+        )
+        id_text = f" id={tracking_id}" if tracking_id else ""
+        obj_meta.text_params.display_text = (
+            f"{source_name} {label} {confidence:.2f}{id_text}"
+        )
+
+        try:
+            l_obj = l_obj.next
+        except StopIteration:
+            break
 
 
 def build_best_target_msg(detections: List[Dict]) -> Optional[Point]:

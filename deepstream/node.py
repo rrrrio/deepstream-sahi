@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """
 File: node.py
-Description: ROS2 entry node for running DeepStream in base or SAHI mode.
-             When C plugins (nvsahipreprocess / nvsahipostprocess) are available,
-             the pipeline runs entirely in native code. Otherwise falls back to
-             Python probe-based NMM and dynamic config generation.
+Description: ROS2 entry node for multi-source DeepStream and native SAHI mode.
 Author: Yuhao Ding
 """
 
+import os
 import threading
 from typing import Generator, Optional
 
@@ -15,28 +13,38 @@ import gi
 import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
+from builtin_interfaces.msg import Time
 from geometry_msgs.msg import Point
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
 gi.require_version("Gst", "1.0")
-from gi.repository import Gst
+from gi.repository import Gst  # noqa: E402
 
-import pyds
+import pyds  # noqa: E402
 
-from .config_validator import validate_runtime_configs
-from .msg_adapter import (
+from .config_validator import (  # noqa: E402
+    prepare_runtime_infer_config,
+    prepare_runtime_preprocess_config,
+    resolve_runtime_config_path,
+    validate_runtime_configs,
+)
+from .msg_adapter import (  # noqa: E402
     HAS_VISION_MSGS,
     Detection2DArray,
     build_best_target_msg,
     build_detection_array_msg,
     extract_detections,
+    update_osd_labels,
 )
-from .pipeline_base import build_pipeline as build_base_pipeline
-from .pipeline_common import MergeConfig, PipelineBuildParams, merge_frame_detections
-from .pipeline_sahi import build_pipeline as build_sahi_pipeline
+from .pipeline_base import build_pipeline as build_base_pipeline  # noqa: E402
+from .metadata_utils import ntp_timestamp_parts  # noqa: E402
+from .pipeline_common import MergeConfig, PipelineBuildParams, compute_sahi_rois  # noqa: E402
+from .pipeline_sahi import build_pipeline as build_sahi_pipeline  # noqa: E402
+from .source_utils import is_file_source, normalize_source_config  # noqa: E402
 
 
 class DeepStreamNode(Node):
@@ -50,7 +58,6 @@ class DeepStreamNode(Node):
         self._bus_thread = None
         self._running = False
         self._merge_cfg = None
-        self._use_python_merge = False
 
         self._declare_parameters()
         self._resolve_runtime_config()
@@ -60,18 +67,24 @@ class DeepStreamNode(Node):
     def _declare_parameters(self):
         self.declare_parameter("mode", "base")
         self.declare_parameter("source", "")
+        self.declare_parameter("sources", Parameter.Type.STRING_ARRAY)
+        self.declare_parameter("source_names", Parameter.Type.STRING_ARRAY)
+        self.declare_parameter("file_loop", True)
+        self.declare_parameter("camera_fps", 30)
+        self.declare_parameter("v4l2_pixel_format", "UYVY")
         self.declare_parameter("infer_config", "")
         self.declare_parameter("preprocess_config", "")
-        self.declare_parameter("tracker_enabled", False)
+        self.declare_parameter("engine_cache_dir", "")
+        self.declare_parameter("tracker_enabled", True)
         self.declare_parameter("tracker_config", "")
         self.declare_parameter("display", True)
         self.declare_parameter("publish_annotated", False)
-        self.declare_parameter("publish_detections", True)
-        self.declare_parameter("publish_best_target", True)
+        self.declare_parameter("publish_detections", False)
+        self.declare_parameter("publish_best_target", False)
         self.declare_parameter("merge_enabled", True)
         self.declare_parameter("merge_metric", "ios")
         self.declare_parameter("merge_threshold", 0.5)
-        self.declare_parameter("det_interval", -1)
+        self.declare_parameter("det_interval", 2)
         self.declare_parameter("pgie_batch_size", 0)
         self.declare_parameter("width", 1920)
         self.declare_parameter("height", 1080)
@@ -88,23 +101,43 @@ class DeepStreamNode(Node):
         if self.mode not in ("base", "sahi"):
             raise ValueError("mode must be one of: base, sahi")
 
-        self.source = str(self.get_parameter("source").value).strip()
-        if not self.source:
-            raise ValueError("source parameter is required")
+        legacy_source = str(self.get_parameter("source").value).strip()
+        sources_value = list(self.get_parameter("sources").value or [])
+        names_value = list(self.get_parameter("source_names").value or [])
+        self.sources, self.source_names = normalize_source_config(
+            legacy_source,
+            sources_value,
+            names_value,
+        )
+        self.source = self.sources[0]
 
         share_dir = get_package_share_directory("deepstream")
         default_infer = (
-            f"{share_dir}/config/config_infer_primary_yolo11_sahi.txt"
+            f"{share_dir}/config/config_infer_primary_yolov11s_sahi.txt"
             if self.mode == "sahi"
-            else f"{share_dir}/config/config_infer_primary_yolo11.txt"
+            else f"{share_dir}/config/config_infer_primary_yolov11s.txt"
+        )
+        default_preprocess = (
+            f"{share_dir}/config/config_preprocess_yolov11s_sahi.txt"
+            if self.mode == "sahi"
+            else ""
         )
         default_tracker = f"{share_dir}/config/deepstream_tracker_config.txt"
 
         infer_config = str(self.get_parameter("infer_config").value).strip() or default_infer
-        preprocess_config_raw = str(self.get_parameter("preprocess_config").value).strip()
+        preprocess_config_raw = (
+            str(self.get_parameter("preprocess_config").value).strip()
+            or default_preprocess
+        )
         tracker_config = str(self.get_parameter("tracker_config").value).strip() or default_tracker
 
-        # preprocess_config is now optional — empty means dynamic generation
+        infer_config = resolve_runtime_config_path(infer_config, share_dir)
+        preprocess_config_raw = resolve_runtime_config_path(
+            preprocess_config_raw,
+            share_dir,
+        )
+        tracker_config = resolve_runtime_config_path(tracker_config, share_dir)
+
         preprocess_config = preprocess_config_raw or None
 
         self.tracker_enabled = bool(self.get_parameter("tracker_enabled").value)
@@ -132,22 +165,82 @@ class DeepStreamNode(Node):
         slice_height = int(self.get_parameter("slice_height").value)
         overlap_h = float(self.get_parameter("overlap_h").value)
         overlap_v = float(self.get_parameter("overlap_v").value)
+        width = int(self.get_parameter("width").value)
+        height = int(self.get_parameter("height").value)
+        if slice_width <= 0 or slice_height <= 0:
+            raise ValueError("slice dimensions must be positive")
+        if slice_width > width or slice_height > height:
+            raise ValueError("slice dimensions must not exceed the mux dimensions")
+        if not 0.0 <= overlap_h < 1.0 or not 0.0 <= overlap_v < 1.0:
+            raise ValueError("overlap_h and overlap_v must be in [0, 1)")
+        if int(self.get_parameter("camera_fps").value) <= 0:
+            raise ValueError("camera_fps must be positive")
+
+        pgie_batch_size = int(self.get_parameter("pgie_batch_size").value)
+        expected_batch_size = len(self.sources)
+        if self.mode == "sahi":
+            roi_count = len(
+                compute_sahi_rois(
+                    width,
+                    height,
+                    slice_width,
+                    slice_height,
+                    overlap_h,
+                    overlap_v,
+                )
+            )
+            expected_batch_size = len(self.sources) * roi_count
+        if pgie_batch_size <= 0:
+            pgie_batch_size = expected_batch_size
+        elif self.mode == "sahi" and expected_batch_size % pgie_batch_size != 0:
+            raise ValueError(
+                "pgie_batch_size must divide source count times SAHI ROI count: "
+                f"configured={pgie_batch_size}, total_rois={expected_batch_size}"
+            )
+
+        engine_cache_dir = str(self.get_parameter("engine_cache_dir").value).strip()
+        if not engine_cache_dir:
+            project_root = os.environ.get("DEEPSTREAM_SAHI_ROOT")
+            engine_cache_dir = (
+                os.path.join(project_root, ".cache", "engines")
+                if project_root
+                else os.path.expanduser("~/.cache/deepstream-sahi/engines")
+            )
+        infer_config = prepare_runtime_infer_config(
+            infer_config,
+            engine_cache_dir,
+            pgie_batch_size,
+        )
+        if self.mode == "sahi" and preprocess_config:
+            preprocess_config = prepare_runtime_preprocess_config(
+                preprocess_config,
+                engine_cache_dir,
+                pgie_batch_size,
+                expected_batch_size,
+            )
 
         self.pipeline_params = PipelineBuildParams(
-            source=self.source,
             infer_config=infer_config,
+            sources=self.sources,
+            source_names=self.source_names,
+            source=legacy_source,
             preprocess_config=preprocess_config,
             tracker_enabled=self.tracker_enabled,
             tracker_config=tracker_config,
             display=self.display,
             publish_annotated=self.publish_annotated,
-            width=int(self.get_parameter("width").value),
-            height=int(self.get_parameter("height").value),
+            width=width,
+            height=height,
             tiled_width=int(self.get_parameter("tiled_width").value),
             tiled_height=int(self.get_parameter("tiled_height").value),
             batched_push_timeout=int(self.get_parameter("batched_push_timeout").value),
-            pgie_batch_size=int(self.get_parameter("pgie_batch_size").value),
+            pgie_batch_size=pgie_batch_size,
             det_interval=int(self.get_parameter("det_interval").value),
+            file_loop=bool(self.get_parameter("file_loop").value),
+            camera_fps=int(self.get_parameter("camera_fps").value),
+            v4l2_pixel_format=str(
+                self.get_parameter("v4l2_pixel_format").value
+            ).strip().upper(),
             slice_width=slice_width,
             slice_height=slice_height,
             overlap_h=overlap_h,
@@ -161,20 +254,30 @@ class DeepStreamNode(Node):
             preprocess_config=self.pipeline_params.preprocess_config,
             tracker_enabled=self.tracker_enabled,
             tracker_config=self.pipeline_params.tracker_config,
+            tensor_batch_size=(pgie_batch_size if self.mode == "sahi" else 0),
+            total_roi_count=(expected_batch_size if self.mode == "sahi" else 0),
             logger=self.get_logger(),
         )
 
     def _setup_publishers(self):
         self.status_pub = self.create_publisher(String, "/deepstream/status", 10)
-        self.detections_pub = None
+        self.detection_publishers = {}
         self.target_pub = None
         self.annotated_pub = None
 
         if self.publish_detections:
             if HAS_VISION_MSGS:
-                self.detections_pub = self.create_publisher(Detection2DArray, "/deepstream/detections", 10)
+                for source_name in self.source_names:
+                    topic = f"/deepstream/{source_name}/detections"
+                    self.detection_publishers[source_name] = self.create_publisher(
+                        Detection2DArray,
+                        topic,
+                        10,
+                    )
             else:
-                self.get_logger().warning("vision_msgs is not available. Disabling /deepstream/detections publisher.")
+                self.get_logger().warning(
+                    "vision_msgs is not available. Disabling detection publishers."
+                )
                 self.publish_detections = False
 
         if self.publish_best_target:
@@ -197,7 +300,7 @@ class DeepStreamNode(Node):
     def _start_pipeline(self):
         self.get_logger().info(
             "Starting deepstream_node: "
-            f"mode={self.mode}, source={self.source}, tracker={self.tracker_enabled}, "
+            f"mode={self.mode}, sources={self.sources}, tracker={self.tracker_enabled}, "
             f"merge={self._merge_cfg.enabled}"
         )
 
@@ -210,19 +313,15 @@ class DeepStreamNode(Node):
         self._pgie = result.pgie
         self._appsink = result.appsink
 
-        # Decide merge strategy: native C++ plugin vs Python probe fallback
-        self._use_python_merge = self._merge_cfg.enabled and not result.has_native_postprocess
         if result.has_native_postprocess:
             self.get_logger().info("Using native nvsahipostprocess for NMM (C++ plugin)")
-        elif self._merge_cfg.enabled:
-            self.get_logger().info("Using Python probe fallback for NMM")
 
-        pgie_src_pad = self._pgie.get_static_pad("src")
-        if not pgie_src_pad:
-            raise RuntimeError("Unable to get PGIE src pad")
-        pgie_src_pad.add_probe(
+        metadata_pad = result.metadata_probe_element.get_static_pad("src")
+        if not metadata_pad:
+            raise RuntimeError("Unable to get metadata probe src pad")
+        metadata_pad.add_probe(
             Gst.PadProbeType.BUFFER,
-            self._pgie_src_probe,
+            self._metadata_probe,
             None,
         )
 
@@ -253,7 +352,14 @@ class DeepStreamNode(Node):
             except StopIteration:
                 break
 
-    def _pgie_src_probe(self, pad, info, user_data):
+    def _frame_stamp(self, frame_meta):
+        parts = ntp_timestamp_parts(getattr(frame_meta, "ntp_timestamp", 0))
+        if parts is None:
+            return self.get_clock().now().to_msg()
+        sec, nanosec = parts
+        return Time(sec=sec, nanosec=nanosec)
+
+    def _metadata_probe(self, pad, info, user_data):
         gst_buffer = info.get_buffer()
         if not gst_buffer:
             return Gst.PadProbeReturn.OK
@@ -262,24 +368,21 @@ class DeepStreamNode(Node):
         if not batch_meta:
             return Gst.PadProbeReturn.OK
 
-        # Python merge only when native postprocess is not in the pipeline
-        if self._use_python_merge:
-            pyds.nvds_acquire_meta_lock(batch_meta)
-            try:
-                for frame_meta in self._iter_frames(batch_meta):
-                    merge_frame_detections(frame_meta, self._merge_cfg)
-            finally:
-                pyds.nvds_release_meta_lock(batch_meta)
-
-        stamp = self.get_clock().now().to_msg()
         for frame_meta in self._iter_frames(batch_meta):
+            source_id = int(frame_meta.source_id)
+            if source_id < 0 or source_id >= len(self.source_names):
+                self.get_logger().error(f"Unknown DeepStream source_id: {source_id}")
+                continue
+            source_name = self.source_names[source_id]
+            stamp = self._frame_stamp(frame_meta)
+            update_osd_labels(frame_meta, source_name)
             detections = extract_detections(frame_meta)
-            frame_id = f"source_{int(frame_meta.source_id)}"
 
-            if self.detections_pub is not None:
-                det_msg = build_detection_array_msg(detections, stamp, frame_id)
+            publisher = self.detection_publishers.get(source_name)
+            if publisher is not None:
+                det_msg = build_detection_array_msg(detections, stamp, source_name)
                 if det_msg is not None:
-                    self.detections_pub.publish(det_msg)
+                    publisher.publish(det_msg)
 
             if self.target_pub is not None:
                 target_msg = build_best_target_msg(detections)
@@ -350,6 +453,15 @@ class DeepStreamNode(Node):
                 if debug:
                     self.get_logger().warning(f"GStreamer debug: {debug}")
             elif mtype == Gst.MessageType.EOS:
+                loop_files = self.pipeline_params.file_loop and all(
+                    is_file_source(source) for source in self.sources
+                )
+                if loop_files:
+                    self.get_logger().info("Looping file sources from the beginning.")
+                    flags = Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT
+                    if self._pipeline.seek_simple(Gst.Format.TIME, flags, 0):
+                        continue
+                    self.get_logger().warning("Unable to seek file pipeline for looping.")
                 self.get_logger().info("Received EOS from pipeline.")
                 self._publish_status("eos")
                 self._running = False
@@ -395,6 +507,7 @@ def main(args=None):
             node.get_logger().error(f"Fatal error: {exc}")
         else:
             print(f"Fatal error: {exc}")
+        raise
     finally:
         if node is not None:
             node.destroy_node()
