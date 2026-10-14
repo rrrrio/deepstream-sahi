@@ -14,7 +14,7 @@
 
 ## 解说
 
-运行环境由 Jetson 宿主机、NVIDIA 容器运行时、DeepStream/GStreamer 插件和 ROS 2 工作区组成。文件与 V4L2 输入共享 GPU、EGL/X11、设备节点和 native SAHI plugin；Argus CSI 输入还需要宿主机完成 camera module 枚举，并把 `/tmp/argus_socket` 映射到容器。
+运行环境由 Jetson 设备、NVIDIA 容器运行时、DeepStream/GStreamer 插件和 ROS 2 工作区组成。当前三相机 V4L2 输入共享 GPU、EGL/X11、`/dev` 设备节点和 native SAHI plugin；Argus CSI 是独立可选路径，额外需要 camera module 枚举和 `/tmp/argus_socket`。
 
 资源检查只能说明依赖存在，不能单独证明相机已经出帧、TensorRT engine 已构建或 ROS 2 topic 正常发布。相机必须继续执行对应的 GStreamer probe；完整检查顺序见[三路管线验证手册](../how-to/verify-milestones.md)。
 
@@ -159,15 +159,23 @@ done
 
 仓库的 Argus 配置使用 [`config/csi_3cam.yaml`](../../config/csi_3cam.yaml)。如果宿主机设备树没有 `tegra-camera-platform` 或 Argus camera module 描述，Docker 配置正确也不能让 `nvarguscamerasrc` 发现相机。
 
-#### V4L2 替代路径
+#### V4L2 三相机路径
 
-如果相机能注册 V4L2 但尚未接入 Argus，可使用 [`config/v4l2_3cam.yaml`](../../config/v4l2_3cam.yaml) 作为三路示例；使用前应按宿主机报告的实际格式调整：
+三相机使用 [`config/v4l2_3cam.yaml`](../../config/v4l2_3cam.yaml)，并通过稳定的 `/dev/v4l/by-path` 链接绑定 capture index。当前 profile 的物理顺序为 index0、index6、index8，对应 `camera_0`、`camera_1`、`camera_2`：
+
+```text
+/dev/v4l/by-path/...index0 -> camera_0
+/dev/v4l/by-path/...index6 -> camera_1
+/dev/v4l/by-path/...index8 -> camera_2
+```
+
+使用前应按设备报告的实际格式调整：
 
 ```text
 UYVY 1920x1080@30 -> v4l2src io-mode=2 -> nvvideoconvert -> NV12/NVMM
 ```
 
-V4L2 路径不需要 `/tmp/argus_socket`，但仍需要 `/dev/videoN`、GPU、EGL/X11 和 NVIDIA GStreamer 插件。`v4l2-ctl` 是格式枚举工具，不是容器内 NVMM 取流的必要条件；`scripts/probe_v4l2_camera.sh` 在容器缺少它时会跳过枚举并继续执行 GStreamer 检查。
+V4L2 路径不需要 `/tmp/argus_socket`，但仍需要 `/dev`、GPU、EGL/X11 和 NVIDIA GStreamer 插件。`v4l2-ctl` 是格式枚举工具，不是容器内 NVMM 取流的必要条件；`scripts/probe_v4l2_camera.sh` 在容器缺少它时会跳过枚举并继续执行 GStreamer 检查。稳定 by-path 缺失时必须失败，不要回退到 `/dev/videoN`。
 
 #### 可写根文件系统与环境检查
 

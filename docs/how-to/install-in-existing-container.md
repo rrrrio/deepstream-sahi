@@ -111,34 +111,39 @@ HTTPS_PROXY=http://your_proxy:port \
 docker commit ds7-sahi ds7-sahi:environment-snapshot
 ```
 
-CSI 容器必须额外挂载 Argus socket。最小示例：
+当前三相机 V4L2 容器只需要映射 `/dev`、GPU、共享内存和 EGL/X11。只有选择 Argus profile 时，才额外挂载 `/tmp/argus_socket`。从仓库根目录启动一次性 V4L2 容器：
 
 ```bash
-docker run --name ds7-sahi-csi \
+docker run --rm --name deepstream-sahi-v4l2 \
   --runtime nvidia \
   --privileged \
   --ipc=host \
   --network=host \
   -v /dev:/dev \
-  -v /tmp/argus_socket:/tmp/argus_socket \
   -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
   -e DISPLAY="$DISPLAY" \
   -e NVIDIA_DRIVER_CAPABILITIES=all \
-  -v "$HOME/wp:/workspace" \
-  -w /workspace \
+  -v "$PWD:/workspace/deepstream-sahi" \
+  -w /workspace/deepstream-sahi \
   ds7-sahi:environment-snapshot bash
 ```
 
-不要把 `/tmp/argus_socket` 误写成普通目录；容器启动时宿主机 socket 必须已经存在。进入容器后执行：
+进入容器后执行 V4L2 资源检查：
 
 ```bash
 cd /workspace/deepstream-sahi
 source /opt/ros/humble/setup.bash
 source scripts/env.sh
-./scripts/check_runtime.sh --require-argus
+./scripts/check_runtime.sh --require-gpu
+for device in \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index0 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index6 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index8; do
+  test -c "$device"
+done
 ```
 
-如果现有启动脚本只映射了 `/dev` 和 X11，却没有映射 `/tmp/argus_socket`，它可以运行文件 profile，却不能满足 CSI 前置条件。修改启动器或使用上面的显式命令后再做 Argus 验证。相机输入的检查顺序和错误处理见[CSI 相机输入验证](verify-csi-camera-input.md)。
+该容器可直接运行文件和 V4L2 profile。若验证 Argus，另行增加 `-v /tmp/argus_socket:/tmp/argus_socket` 和 `--ipc=host`，并按[CSI 相机输入验证](verify-csi-camera-input.md)的可选 Argus 流程执行。
 
 显示模式还需要有效的 X11 授权。宿主机可按实际用户执行：
 
@@ -162,42 +167,43 @@ DISPLAY="$DISPLAY" xhost +SI:localuser:root
 ```bash
 ./scripts/check_runtime.sh --require-gpu
 ./scripts/check_runtime.sh --require-display
-./scripts/check_runtime.sh --require-argus
-gst-inspect-1.0 nvarguscamerasrc
+gst-inspect-1.0 v4l2src
 ```
 
-宿主机另行检查：
+V4L2 设备路径另行检查：
 
 ```bash
 v4l2-ctl --list-devices
-systemctl is-active nvargus-daemon
+ls -l /dev/v4l/by-path/platform-tegra-capture-vi-video-index{0,6,8}
 ```
 
-然后逐个验证 Argus：
+逐个验证 V4L2：
 
 ```bash
+for device in \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index0 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index6 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index8; do
+  ./scripts/probe_v4l2_camera.sh "$device" 10
+done
+```
+
+稳定路径缺失时停止并修复设备映射，不回退到 `/dev/videoN`。
+
+只有需要 Argus 时才额外执行：
+
+```bash
+./scripts/check_runtime.sh --require-argus
 for sensor_id in 0 1 2; do
   ./scripts/probe_argus_camera.sh "$sensor_id" 120
 done
 ```
 
-脚本会检查日志错误并统计实际输出的 120 个 buffer。由于 Argus 错误可能通过 EOS 返回退出码 0，不能只检查 shell 返回值。
-
-如果 Argus 尚未修复，但宿主机 V4L2 能出帧，可执行替代路径：
-
-```bash
-for device in /dev/video0 /dev/video1 /dev/video2; do
-  ./scripts/probe_v4l2_camera.sh "$device" 10
-done
-```
-
 ## 8. 回滚
 
-保留旧容器和快照，直到文件、GPU、OSD、ROS 2 和 CSI 检查完成。只删除本次创建的替代容器：
+保留镜像快照，直到文件、GPU、OSD、ROS 2 和 V4L2 检查完成。使用 `--rm` 创建的临时容器会在退出后自动清理：
 
 ```bash
-docker stop ds7-sahi-csi
-docker rm ds7-sahi-csi
 docker image inspect ds7-sahi:environment-snapshot
 ```
 

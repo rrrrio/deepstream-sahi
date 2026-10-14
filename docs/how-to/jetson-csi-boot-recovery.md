@@ -1,6 +1,6 @@
 # Jetson CSI 配置与启动恢复记录
 
-本文记录 2026-10-13 至 2026-10-14 在 `ssh bdca2@192.168.10.158` 上排查三路 VEYE/Seeed CSI 相机、修改设备树后进入 Recovery，以及最终恢复正常启动的完整过程。
+本文记录 2026-10-13 至 2026-10-14 在 Jetson 开发环境排查三路 VEYE/Seeed CSI 相机、修改设备树后进入 Recovery，以及最终恢复正常启动的完整过程。
 
 本文既是一次故障复盘，也是同类设备的恢复操作指南。目标设备为 Seeed reComputer Super，L4T `R36.4.3`，内核 `5.15.148-tegra`，系统根分区位于 NVMe APP 分区 `/dev/nvme0n1p1`。
 

@@ -27,7 +27,7 @@ SAHI 使用固定的 native plugin。缺少 `nvsahipreprocess` 或 `nvsahipostpr
 - `config/sim_3cam_headless.yaml`：三路文件、无可见窗口和检测 topic profile。
 - `config/sim_3cam.yaml`：三路文件和 2x2 OSD profile。
 - `config/csi_3cam.yaml`：三路 Argus CSI profile。
-- `config/v4l2_3cam.yaml`：适用于三路设备均提供 `UYVY 1920x1080@30` 的 V4L2 fallback profile；使用前按设备实际格式调整。
+- `config/v4l2_3cam.yaml`：当前三相机 V4L2 profile，使用稳定的 `/dev/v4l/by-path` 链接和 `UYVY 1920x1080@30`。
 - `scripts/`：容器安装、运行时检查、相机输入 probe 和环境脚本。
 - `docs/`：教程、操作指南、参考、架构说明和相机输入排障流程。
 
@@ -99,25 +99,28 @@ ros2 launch deepstream deepstream.launch.py \
 
 启动完整 CSI profile 前，必须逐个验证 `sensor-id=0/1/2`，并确认每一路真实输出 120 个 buffer 且没有 Argus 错误。`gst-launch-1.0` 在 Argus 错误后可能仍返回 0，不能只看退出码。
 
-三路 V4L2 fallback：
+三路 V4L2 相机：
 
 ```bash
-for device in /dev/video0 /dev/video1 /dev/video2; do
+for device in \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index0 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index6 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index8; do
   ./scripts/probe_v4l2_camera.sh "$device" 10
 done
 ros2 launch deepstream deepstream.launch.py \
   params_file:=config/v4l2_3cam.yaml \
   display:=false \
-  publish_detections:=false
+  publish_detections:=true
 ```
 
-V4L2 profile 使用设备当前的 `UYVY 1920x1080@30`，转换为 `NV12/NVMM` 后进入 `nvstreammux`。
+V4L2 profile 按 capture index 0、6、8 对应 `camera_0`、`camera_1`、`camera_2`，使用设备当前的 `UYVY 1920x1080@30`，转换为 `NV12/NVMM` 后进入 `nvstreammux`。稳定路径缺失时启动会明确失败，不会静默回退到 `/dev/videoN`。
 
 ## 验证边界
 
 本仓库当前的 CSI 前置验证只确认相机数据能进入 `deepstream.launch.py` 所需的输入边界，不把真实推理、检测内容、ROS topic 或 30 分钟稳定性当作相机前置条件。完整命令和预期输出见[三路管线验证手册](docs/how-to/verify-milestones.md)。
 
-相机输入验证按以下顺序进行：先在宿主机确认 sensor、media topology、设备格式和 `nvargus-daemon`，再在容器中确认 GPU、设备节点、Argus socket 和插件，最后逐路验证 Argus，再进入完整 launch。若 Argus 尚未可用但 V4L2 能出帧，可使用 V4L2 profile 验证输入边界；两条路径的通过结论相互独立。
+当前三相机验证先确认 `/dev/v4l/by-path` 的物理映射、设备格式和 V4L2 实际帧，再在容器中确认 GPU、设备节点和插件，最后进入完整 V4L2 launch 并检查三个 ROS detection topic。Argus 是独立的可选输入路径，不是 V4L2 三相机验收的前置条件。
 
 常见问题包括容器缺少 `/tmp/argus_socket`、`No cameras available`、设备树缺少 NVIDIA camera enumerator、camera kernel node 打开失败，以及 V4L2 caps 协商失败。对应检查和处理方式见[CSI 相机输入验证](docs/how-to/verify-csi-camera-input.md)。
 

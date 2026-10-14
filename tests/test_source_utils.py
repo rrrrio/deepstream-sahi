@@ -1,3 +1,6 @@
+import stat
+from types import SimpleNamespace
+
 import pytest
 
 from deepstream.source_utils import (
@@ -13,6 +16,12 @@ source_utils = pytest.importorskip("deepstream.source_utils")
 def test_detects_device_path_and_uri():
     assert is_v4l2_source("/dev/video0")
     assert is_v4l2_source("v4l2:///dev/video1")
+    assert is_v4l2_source(
+        "/dev/v4l/by-path/platform-tegra-capture-vi-video-index0"
+    )
+    assert is_v4l2_source(
+        "v4l2:///dev/v4l/by-path/platform-tegra-capture-vi-video-index6"
+    )
 
 
 def test_rejects_non_camera_sources():
@@ -30,6 +39,9 @@ def test_detects_live_sources():
 def test_normalizes_v4l2_values():
     assert v4l2_device_path("v4l2:///dev/video2") == "/dev/video2"
     assert v4l2_device_path("/dev/video3") == "/dev/video3"
+    stable_path = "/dev/v4l/by-path/platform-tegra-capture-vi-video-index8"
+    assert v4l2_device_path(stable_path) == stable_path
+    assert v4l2_device_path(f"v4l2://{stable_path}") == stable_path
 
 
 def test_rejects_malformed_v4l2_uri():
@@ -39,6 +51,36 @@ def test_rejects_malformed_v4l2_uri():
         pass
     else:
         raise AssertionError("malformed V4L2 URI was accepted")
+
+
+def test_validates_v4l2_character_devices(monkeypatch):
+    stable_path = "/dev/v4l/by-path/platform-tegra-capture-vi-video-index0"
+    monkeypatch.setattr(
+        source_utils.os,
+        "stat",
+        lambda _path: SimpleNamespace(st_mode=stat.S_IFCHR),
+    )
+
+    assert source_utils.validate_v4l2_device(stable_path) == stable_path
+
+
+def test_rejects_missing_or_non_character_v4l2_devices(monkeypatch):
+    stable_path = "/dev/v4l/by-path/platform-tegra-capture-vi-video-index0"
+
+    def missing(_path):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(source_utils.os, "stat", missing)
+    with pytest.raises(ValueError, match="does not exist"):
+        source_utils.validate_v4l2_device(stable_path)
+
+    monkeypatch.setattr(
+        source_utils.os,
+        "stat",
+        lambda _path: SimpleNamespace(st_mode=stat.S_IFREG),
+    )
+    with pytest.raises(ValueError, match="not a character device"):
+        source_utils.validate_v4l2_device(stable_path)
 
 
 def test_classifies_argus_sources_and_validates_sensor_id():

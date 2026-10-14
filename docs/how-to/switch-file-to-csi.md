@@ -1,6 +1,6 @@
 # 从文件切换到 CSI
 
-本指南把已有的三路文件 source 替换为 Jetson Argus CSI source。它只适用于宿主机已经枚举 Argus 相机、容器已经映射 NVIDIA 设备和 `/tmp/argus_socket` 的环境。
+本指南把已有的三路文件 source 替换为 Jetson Argus CSI source。它是可选的 Argus 专用流程；当前三相机正式输入使用 `config/v4l2_3cam.yaml`，不依赖本指南。
 
 ## 完成标准
 
@@ -8,11 +8,12 @@
 
 ## 前置检查
 
-先在宿主机执行：
+先在提供 Argus 相机的运行环境执行：
 
 ```bash
-cd ~/wp/deepstream-sahi
-./scripts/host_preflight_simulation.sh "$HOME/wp"
+v4l2-ctl --list-devices
+systemctl is-active nvargus-daemon
+test -S /tmp/argus_socket
 ```
 
 再在容器中执行：
@@ -55,6 +56,6 @@ ros2 topic list | sort | grep '/deepstream/.*/detections'
 ros2 topic hz /deepstream/camera_0/detections
 ```
 
-若三路启动失败，先回到单路 `argus://N`，再回到[三路验证手册](verify-milestones.md)的 CSI 检查。回退到文件只需把 `sources` 换成三个 `file://` URI，并保持相同的 `source_names`；SAHI、tracker 和 ROS topic 配置可以不变。
+若三路启动失败，先回到单路 `argus://N`，再回到[三路验证手册](verify-milestones.md)的 Argus 检查。回退到 V4L2 使用 `config/v4l2_3cam.yaml`；回退到文件只需把 `sources` 换成三个 `file://` URI，并保持相同的 `source_names`。
 
 如果宿主机日志出现 `NVIDIA Camera enumerator not found in proc device-tree` 或 `Camera node not detected`，这不是容器参数问题，需要修复供应商设备树/Argus camera module 配置。按[CSI 相机输入验证](verify-csi-camera-input.md)中的错误表检查设备树、驱动和容器资源。

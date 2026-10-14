@@ -48,7 +48,12 @@ from .pipeline_common import (  # noqa: E402
     compute_sahi_rois,
 )
 from .pipeline_sahi import build_pipeline as build_sahi_pipeline  # noqa: E402
-from .source_utils import is_file_source, normalize_source_config  # noqa: E402
+from .source_utils import (  # noqa: E402
+    is_file_source,
+    is_v4l2_source,
+    normalize_source_config,
+    validate_v4l2_device,
+)
 
 
 class DeepStreamNode(Node):
@@ -113,6 +118,9 @@ class DeepStreamNode(Node):
             sources_value,
             names_value,
         )
+        for source in self.sources:
+            if is_v4l2_source(source):
+                validate_v4l2_device(source)
         self.source = self.sources[0]
 
         share_dir = get_package_share_directory("deepstream")

@@ -1,6 +1,6 @@
 # 三路管线验证手册
 
-本手册按依赖顺序验证仓库的三路文件、显示、ROS 2、Argus CSI 和 V4L2 输入。验证边界由测试目标决定：CSI 部分只验证相机输入是否能进入 `deepstream.launch.py` 所需的 NV12/NVMM 输入，不验证模型推理结果和长时间稳定性。
+本手册按依赖顺序验证仓库的三路文件、显示、ROS 2 和 V4L2 输入。当前三相机正式路径使用稳定 by-path；Argus CSI 作为独立可选路径。验证边界包括真实输入、DeepStream source 和 ROS detection topic，不包含长时间稳定性。
 
 所有容器内命令从 `/workspace/deepstream-sahi` 执行。硬件命令必须在对应的 Jetson 宿主机或正确映射的 Docker 容器内执行。
 
@@ -17,7 +17,7 @@ ros2 -h | sed -n '1,3p'
 ./scripts/check_runtime.sh
 ```
 
-检查输出中的 DeepStream、GPU、X11 和 Argus 资源。只缺少可选资源时可以继续软件测试；执行相机验证前必须通过 `--require-argus` 或替代 V4L2 条件。
+检查输出中的 DeepStream、GPU 和 X11 资源。执行当前三相机验证前必须通过 GPU、设备节点和 V4L2 条件，不要求 Argus socket。
 
 ## 2. 检查 Python 与 native plugin
 
@@ -36,7 +36,7 @@ gst-inspect-1.0 nvsahipostprocess
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q tests
 ```
 
-应覆盖 source 分类、数组校验、ROI 计算、时间戳、tracking confidence、YOLOv11s parser、三路 profile 和原生插件归属检查。当前本地结果为 `53 passed, 1 skipped`；存在依赖版本带来的弃用警告。
+应覆盖 source 分类、数组校验、ROI 计算、时间戳、tracking confidence、YOLOv11s parser、三路 profile 和原生插件归属检查；以当前测试命令的实际通过数量为准。
 
 ## 4. 构建 ROS 2 包
 
@@ -98,28 +98,25 @@ ros2 topic hz /deepstream/camera_0/detections
 
 应看到三个按 `source_names` 命名的检测 topic。空目标帧也应发布空数组；bbox 使用 tiler 前的原图坐标。
 
-## 8. 宿主机 CSI 前置检查
+## 8. 宿主机 V4L2 前置检查
 
-在 Jetson 宿主机执行：
+在提供相机设备的运行环境执行：
 
 ```bash
-cd ~/wp/deepstream-sahi
-./scripts/host_preflight_simulation.sh "$HOME/wp"
 v4l2-ctl --list-devices
+v4l2-ctl --list-formats-ext -d /dev/video0
+ls -l /dev/v4l/by-path/platform-tegra-capture-vi-video-index{0,6,8}
 ls -l /dev/video* /dev/media*
-systemctl is-active nvargus-daemon
-test -S /tmp/argus_socket
 ```
 
-`host_preflight_simulation.sh` 只验证 Docker、GPU 和工作区，不验证 Argus。必须继续检查 media topology、sensor format 和 Argus 日志。设备树/驱动问题不能通过容器参数修复。
+继续检查 media topology、sensor format 和三条稳定 by-path 的目标。设备节点编号不作为 `camera_0/1/2` 的身份。
 
-## 9. 容器 CSI 资源检查
+## 9. 容器 V4L2 资源检查
 
 容器必须映射：
 
 ```text
 /dev
-/tmp/argus_socket
 /tmp/.X11-unix
 ```
 
@@ -129,60 +126,58 @@ test -S /tmp/argus_socket
 source /opt/ros/humble/setup.bash
 source scripts/env.sh
 ./scripts/check_runtime.sh --require-gpu
-./scripts/check_runtime.sh --require-argus
-gst-inspect-1.0 nvarguscamerasrc
-test -S /tmp/argus_socket
-```
-
-`--require-argus` 通过只代表 DeepStream、GPU、插件和 socket 存在，不代表 Argus 已发现相机。
-
-## 10. 逐路验证 Argus
-
-逐个执行：
-
-```bash
-set -euo pipefail
-for sensor_id in 0 1 2; do
-  ./scripts/probe_argus_camera.sh "$sensor_id" 120
+gst-inspect-1.0 v4l2src
+for device in \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index0 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index6 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index8; do
+  test -c "$device"
 done
 ```
 
-脚本会统计每一路真实输出的 120 个 buffer，并检查 Argus 错误。不能只检查 `gst-launch` 退出码，因为错误可能通过 EOS 返回 0。
+V4L2 路径不要求 `/tmp/argus_socket`。如果出现 `Authorization required` 或 `No EGL Display`，先修复 EGL/X11 资源。
 
-## 11. 逐路验证 V4L2 输入
+## 10. 逐路验证 V4L2 输入
 
-如果 Argus 未通过，但 `/dev/videoN` 能取流，执行：
+按稳定 capture index 逐个执行：
 
 ```bash
-for device in /dev/video0 /dev/video1 /dev/video2; do
+for device in \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index0 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index6 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index8; do
   ./scripts/probe_v4l2_camera.sh "$device" 10
 done
 ```
 
-探针必须根据宿主机 `v4l2-ctl --list-formats-ext` 报告的实际格式协商。例如设备报告 `UYVY 1920x1080@30` 时，输入链路为：
+脚本会按显式 `UYVY 1920x1080@30` caps 检查真实帧，并确认输入能转换到 NV12/NVMM。稳定路径缺失时不要改用 `/dev/videoN`，先修复设备映射。
 
-```text
-UYVY -> NV12/NVMM -> nvstreammux
-```
+## 11. 进入 `deepstream.launch.py`
 
-脚本会使用 `v4l2src io-mode=2` 和显式 caps。容器没有 `v4l2-ctl` 时只跳过格式枚举；格式枚举建议在宿主机执行。
-
-## 12. 进入 `deepstream.launch.py`
-
-使用 V4L2 profile，只验证相机 source 初始化：
+使用当前三相机 V4L2 profile：
 
 ```bash
 source /opt/ros/humble/setup.bash
 source scripts/env.sh
-timeout --signal=INT --kill-after=3s 12s \
+timeout --signal=INT --kill-after=3s 20s \
   ros2 launch deepstream deepstream.launch.py \
   params_file:=config/v4l2_3cam.yaml \
-  display:=false publish_detections:=false publish_annotated:=false
+  display:=false publish_detections:=true publish_annotated:=false
 ```
 
-成功边界是日志出现三个 V4L2 source、native SAHI plugin、streammux/NvTracker 初始化，且没有 source caps、NVMM 或 input signal 错误。不要把 TensorRT 推理、检测结果和长时间稳定性纳入这一项。
+成功边界是日志出现三个 V4L2 source、native SAHI plugin、streammux/NvTracker 初始化，且没有 source caps、NVMM、input signal 或设备打开错误。
 
-Argus profile 的等价入口为：
+## 12. 验证 ROS 2 输出
+
+```bash
+ros2 topic list | sort | grep '/deepstream/.*/detections'
+ros2 topic echo --once /deepstream/camera_0/detections
+ros2 topic hz /deepstream/camera_0/detections
+```
+
+应看到三个按 `source_names` 命名的 topic。使用已知目标或遮挡测试确认 topic 与 capture index 没有串路。
+
+## 13. 可选的 Argus profile
 
 ```bash
 ros2 launch deepstream deepstream.launch.py \
@@ -190,9 +185,9 @@ ros2 launch deepstream deepstream.launch.py \
   display:=false publish_detections:=false
 ```
 
-只有三路 Argus 独立检查通过后才执行；如果宿主机 camera enumeration 尚未满足，不应继续启动该 profile。
+只有产品明确选择 Argus 且三路 Argus 独立检查通过后才执行；它不影响 V4L2 profile 的验收。
 
-## 13. 回滚
+## 14. 回滚
 
 停止当前 launch 并确认进程退出。保留失败日志和环境快照。不要删除 DeepStream SDK、不要修改宿主机设备节点，也不要把容器内临时节点当作真实硬件映射。
 

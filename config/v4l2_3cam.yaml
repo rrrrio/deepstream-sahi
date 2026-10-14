@@ -1,7 +1,10 @@
 deepstream_node:
   ros__parameters:
     mode: sahi
-    sources: [/dev/video2, /dev/video1, /dev/video0]
+    sources:
+      - /dev/v4l/by-path/platform-tegra-capture-vi-video-index0
+      - /dev/v4l/by-path/platform-tegra-capture-vi-video-index6
+      - /dev/v4l/by-path/platform-tegra-capture-vi-video-index8
     source_names: [camera_0, camera_1, camera_2]
     file_loop: false
     camera_fps: 30

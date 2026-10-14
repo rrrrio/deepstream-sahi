@@ -70,14 +70,14 @@ ros2 launch deepstream deepstream.launch.py \
 > `/tmp/argus_socket`、宿主机 Argus 枚举失败和设备树问题；修改设备树前备份原文件、
 > 记录 SHA256，并准备串口和回滚路径。完整恢复流程见[Jetson CSI 配置与启动恢复记录](jetson-csi-boot-recovery.md)。
 
-## 10.158 三路 CSI 验证记录（2026-10-13）
+## 三路 CSI 验证记录（2026-10-13）
 
-本次验证的目标设备是 `ssh bdca2@192.168.10.158` 对应的 Seeed reComputer
-Super，live device tree 为 `nvidia,p3768-0000+p3767-0000-super`，L4T 为
+本次验证在 Seeed reComputer Super 开发环境完成，live device tree 为
+`nvidia,p3768-0000+p3767-0000-super`，L4T 为
 `R36.4.3`，内核为 `5.15.148-tegra`。提权后的 `nvidia-smi` 可以识别
 `Orin (nvgpu)`，GPU 和 DeepStream 资源检查通过。
 
-要区分两个 namespace：目标宿主机确实有 `/tmp/argus_socket`、`/dev/video0`、
+要区分两个 namespace：提供硬件的宿主机确实有 `/tmp/argus_socket`、`/dev/video0`、
 `/dev/video1`、`/dev/video2` 和 `/dev/media0`；最初运行检查的独立诊断容器没有
 这些挂载，因此不能代表目标宿主机。实际运行中的 `ds7-sahi` 容器挂载了 `/dev`，
 但 Docker inspect 显示没有挂载 `/tmp/argus_socket`，所以容器内的
@@ -143,7 +143,7 @@ Recovery。完整经过和恢复证据见[Jetson CSI 配置与启动恢复记录
 
 推荐恢复顺序：
 
-1. 当前设备优先使用 `config/v4l2_3cam.yaml`。按[现有容器安装指南](install-in-existing-container.md)启动一次性 CSI 容器，映射 `/dev`、`/tmp/argus_socket`、`--ipc=host` 和 NVIDIA runtime；先运行三个 `scripts/probe_v4l2_camera.sh`，再运行短时 ROS 2 管线。不要把 Argus 失败误判为 V4L2 失败。
+1. 当前设备优先使用 `config/v4l2_3cam.yaml`。按[现有容器安装指南](install-in-existing-container.md)启动一次性 V4L2 容器，映射 `/dev`、共享内存和 NVIDIA runtime；先运行三条 `/dev/v4l/by-path` 的 `scripts/probe_v4l2_camera.sh`，再运行短时 ROS 2 管线。不要把 Argus 失败误判为 V4L2 失败。
 2. 如果确认必须修复设备树，使用与 reComputer Super、sensor 和 L4T `R36.4.3` 匹配的
    供应商 BSP、`.dtsi`/`.dtbo` 和刷写流程。不要根据 `serdes_link_freq` 错误自行填入
    猜测值，也不要在运行中的系统上手工替换 DTB/DTBO 或追加 `FDT`。
@@ -151,8 +151,9 @@ Recovery。完整经过和恢复证据见[Jetson CSI 配置与启动恢复记录
    启动后检查根路径
    `/proc/device-tree/tegra-camera-platform`、三路 `bound`/`Detected VEYECAM sensor`、
    `/tmp/argus_socket` 和 `nvargus-daemon`。
-4. 重建 `ds7-sahi` CSI 容器，映射 `/dev`、`/tmp/argus_socket`、`--ipc=host` 和
-   NVIDIA runtime，然后在容器内运行 `./scripts/check_runtime.sh --require-argus`。
+4. 如果产品必须使用 Argus，再创建 Argus 容器，映射 `/dev`、`/tmp/argus_socket`、
+   `--ipc=host` 和 NVIDIA runtime，然后在容器内运行
+   `./scripts/check_runtime.sh --require-argus`。
 5. 重新执行三个 `./scripts/probe_argus_camera.sh 0 120`、`1 120`、`2 120`，
    三路都通过后才启动 `config/csi_3cam.yaml`。
 

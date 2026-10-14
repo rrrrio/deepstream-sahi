@@ -1,17 +1,24 @@
 """Pure helpers for classifying and validating pipeline sources."""
 
-from urllib.parse import urlparse
-from typing import Iterable, List, Tuple
+import os
 import re
+import stat
+from typing import Iterable, List, Tuple
+from urllib.parse import urlparse
 
 
 SOURCE_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+V4L2_DEVICE_PREFIXES = ("/dev/video", "/dev/v4l/by-path/")
+
+
+def _is_v4l2_device_path(value: str) -> bool:
+    return value.startswith(V4L2_DEVICE_PREFIXES)
 
 
 def is_v4l2_source(source: str) -> bool:
     """Return whether *source* names a local V4L2 camera device."""
     value = source.strip()
-    return value.startswith("/dev/video") or value.startswith("v4l2://")
+    return _is_v4l2_device_path(value) or value.startswith("v4l2://")
 
 
 def is_argus_source(source: str) -> bool:
@@ -55,7 +62,7 @@ def is_live_source(source: str) -> bool:
 def v4l2_device_path(source: str) -> str:
     """Normalize a V4L2 source value to an absolute device path."""
     value = source.strip()
-    if value.startswith("/dev/video"):
+    if _is_v4l2_device_path(value):
         return value
     if value.startswith("v4l2://"):
         parsed = urlparse(value)
@@ -64,9 +71,25 @@ def v4l2_device_path(source: str) -> str:
             path = "/" + parsed.netloc
         elif parsed.netloc and path:
             path = "/" + parsed.netloc + path
-        if path.startswith("/dev/video"):
+        if _is_v4l2_device_path(path):
             return path
     raise ValueError(f"Unsupported V4L2 source: {source!r}")
+
+
+def validate_v4l2_device(source: str) -> str:
+    """Return *source*'s device path when it is an accessible character device."""
+    path = v4l2_device_path(source)
+    try:
+        mode = os.stat(path).st_mode
+    except FileNotFoundError as exc:
+        raise ValueError(f"V4L2 device does not exist: {path}") from exc
+    except OSError as exc:
+        raise ValueError(
+            f"Unable to access V4L2 device {path}: {exc}"
+        ) from exc
+    if not stat.S_ISCHR(mode):
+        raise ValueError(f"V4L2 path is not a character device: {path}")
+    return path
 
 
 def normalize_source_config(
