@@ -136,17 +136,12 @@ def test_class_filter_removes_only_disallowed_objects():
     batch = types.SimpleNamespace(frame_meta_list=frame_node)
     removed = []
 
-    class Lock:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
+    released = []
     pyds_module = types.SimpleNamespace(
         NvDsFrameMeta=types.SimpleNamespace(cast=lambda value: value),
         NvDsObjectMeta=types.SimpleNamespace(cast=lambda value: value),
-        nvds_acquire_meta_lock=lambda _batch: Lock(),
+        nvds_acquire_meta_lock=lambda _batch: None,
+        nvds_release_meta_lock=lambda _batch: released.append(True),
         nvds_remove_obj_meta_from_frame=lambda _frame, obj: removed.append(
             obj.class_id
         ),
@@ -155,6 +150,7 @@ def test_class_filter_removes_only_disallowed_objects():
     filter_object_metadata(batch, [0, 2], pyds_module)
 
     assert removed == [7]
+    assert released == [True]
 
 
 def test_runtime_infer_config_uses_writable_batch_specific_engine(tmp_path):

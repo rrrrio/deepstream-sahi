@@ -33,6 +33,7 @@ def filter_object_metadata(batch_meta, allowed_class_ids, pyds_module):
         return
 
     acquire_lock = getattr(pyds_module, "nvds_acquire_meta_lock", None)
+    release_lock = getattr(pyds_module, "nvds_release_meta_lock", None)
     remove_object = getattr(
         pyds_module, "nvds_remove_obj_meta_from_frame", None
     )
@@ -42,14 +43,13 @@ def filter_object_metadata(batch_meta, allowed_class_ids, pyds_module):
             "nvds_remove_obj_meta_from_frame for class filtering"
         )
 
-    with acquire_lock(batch_meta):
+    def remove_disallowed_objects():
         l_frame = batch_meta.frame_meta_list
         while l_frame is not None:
             try:
                 frame_meta = pyds_module.NvDsFrameMeta.cast(l_frame.data)
             except StopIteration:
                 break
-
             l_obj = frame_meta.obj_meta_list
             while l_obj is not None:
                 try:
@@ -69,6 +69,21 @@ def filter_object_metadata(batch_meta, allowed_class_ids, pyds_module):
                 l_frame = l_frame.next
             except StopIteration:
                 break
+
+    lock_token = acquire_lock(batch_meta)
+    if hasattr(lock_token, "__enter__"):
+        with lock_token:
+            remove_disallowed_objects()
+    else:
+        if release_lock is None:
+            raise RuntimeError(
+                "DeepStream pyds bindings must provide "
+                "nvds_release_meta_lock"
+            )
+        try:
+            remove_disallowed_objects()
+        finally:
+            release_lock(batch_meta)
 
 
 def select_confidence(
