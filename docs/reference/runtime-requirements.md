@@ -150,9 +150,12 @@ systemctl is-active nvargus-daemon
 # 容器
 ./scripts/check_runtime.sh --require-argus
 gst-inspect-1.0 nvarguscamerasrc
+for sensor_id in 0 1 2; do
+  ./scripts/probe_argus_camera.sh "$sensor_id" 120
+done
 ```
 
-然后逐个运行 `nvarguscamerasrc sensor-id=N`，检查输出中没有 `No cameras available`，并确认真的有帧。`gst-launch-1.0` 可能在 Argus 错误后收到 EOS 并返回 0，退出码不能单独作为通过条件。
+然后逐个运行 `scripts/probe_argus_camera.sh`，确认每一路真实输出 120 个 buffer 且没有 Argus 错误。`gst-launch-1.0` 可能在 Argus 错误后收到 EOS 并返回 0，退出码不能单独作为通过条件。
 
 仓库的 Argus 配置使用 [`config/csi_3cam.yaml`](../../config/csi_3cam.yaml)。如果宿主机设备树没有 `tegra-camera-platform` 或 Argus camera module 描述，Docker 配置正确也不能让 `nvarguscamerasrc` 发现相机。
 

@@ -134,28 +134,20 @@ gst-inspect-1.0 nvarguscamerasrc
 test -S /tmp/argus_socket
 ```
 
-`--require-argus` 通过只代表 socket、GPU 和插件存在，不代表 Argus 已发现相机。
+`--require-argus` 通过只代表 DeepStream、GPU、插件和 socket 存在，不代表 Argus 已发现相机。
 
 ## 10. 逐路验证 Argus
 
 逐个执行：
 
 ```bash
+set -euo pipefail
 for sensor_id in 0 1 2; do
-  echo "=== sensor-id=$sensor_id ==="
-  gst-launch-1.0 -e nvarguscamerasrc \
-    sensor-id="$sensor_id" num-buffers=120 \
-    ! 'video/x-raw(memory:NVMM),format=NV12,width=1920,height=1080,framerate=30/1' \
-    ! fakesink sync=false 2>&1 | tee "/tmp/argus-$sensor_id.log"
-  if grep -Eq 'No cameras available|Failure to open Camera Kernel Node|Camera node not detected' \
-      "/tmp/argus-$sensor_id.log"; then
-    echo "Argus sensor $sensor_id failed"
-    exit 1
-  fi
+  ./scripts/probe_argus_camera.sh "$sensor_id" 120
 done
 ```
 
-每一路都必须有真实取流输出，且不能出现 Argus 错误。不能只检查 `gst-launch` 退出码，因为错误可能通过 EOS 返回 0。
+脚本会统计每一路真实输出的 120 个 buffer，并检查 Argus 错误。不能只检查 `gst-launch` 退出码，因为错误可能通过 EOS 返回 0。
 
 ## 11. 逐路验证 V4L2 输入
 

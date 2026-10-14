@@ -177,13 +177,11 @@ systemctl is-active nvargus-daemon
 
 ```bash
 for sensor_id in 0 1 2; do
-  gst-launch-1.0 -e nvarguscamerasrc sensor-id="$sensor_id" num-buffers=120 \
-    ! 'video/x-raw(memory:NVMM),format=NV12,width=1920,height=1080,framerate=30/1' \
-    ! fakesink sync=false
+  ./scripts/probe_argus_camera.sh "$sensor_id" 120
 done
 ```
 
-必须检查日志中没有 `No cameras available`。由于 Argus 错误可能通过 EOS 返回退出码 0，不能只检查 shell 返回值。
+脚本会检查日志错误并统计实际输出的 120 个 buffer。由于 Argus 错误可能通过 EOS 返回退出码 0，不能只检查 shell 返回值。
 
 如果 Argus 尚未修复，但宿主机 V4L2 能出帧，可执行替代路径：
 

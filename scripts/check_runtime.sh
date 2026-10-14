@@ -58,9 +58,11 @@ else
     report /dev/dri/card0 missing
 fi
 
+argus_plugin_ready=false
 if command -v gst-inspect-1.0 >/dev/null 2>&1 \
     && gst-inspect-1.0 nvarguscamerasrc >/dev/null 2>&1; then
     report nvarguscamerasrc present
+    argus_plugin_ready=true
 else
     report nvarguscamerasrc missing
 fi
@@ -93,8 +95,8 @@ if [ "${require_gpu}" = true ] && { [ "${deepstream_ready}" = false ] || [ "${gp
     printf '%s\n' 'check_runtime: DeepStream and GPU device mappings are required.' >&2
     failed=true
 fi
-if [ "${require_argus}" = true ] && { [ "${deepstream_ready}" = false ] || [ "${gpu_ready}" = false ] || [ "${argus_ready}" = false ]; }; then
-    printf '%s\n' 'check_runtime: CSI requires DeepStream, GPU device mappings, and /tmp/argus_socket.' >&2
+if [ "${require_argus}" = true ] && { [ "${deepstream_ready}" = false ] || [ "${gpu_ready}" = false ] || [ "${argus_plugin_ready}" = false ] || [ "${argus_ready}" = false ]; }; then
+    printf '%s\n' 'check_runtime: CSI requires DeepStream, GPU devices, nvarguscamerasrc, and /tmp/argus_socket.' >&2
     failed=true
 fi
 if [ "${require_display}" = true ] && { [ "${deepstream_ready}" = false ] || [ "${gpu_ready}" = false ] || [ "${display_ready}" = false ]; }; then

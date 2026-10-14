@@ -17,6 +17,7 @@
 - [运行显示与无窗口模式](how-to/run-display-and-headless.md)：选择 2x2 OSD 或无窗口 sink。
 - [启用 ROS 2 检测发布](how-to/enable-ros2-publishing.md)：发布每路 `Detection2DArray`。
 - [故障排查](how-to/troubleshooting.md)：按现象定位常见问题。
+- [Jetson CSI 配置与启动恢复记录](how-to/jetson-csi-boot-recovery.md)：记录 Argus、设备树、UEFI Recovery 和启动恢复流程。
 
 ### 参考
 

@@ -89,12 +89,15 @@ ros2 launch deepstream deepstream.launch.py \
 
 ```bash
 ./scripts/check_runtime.sh --require-argus
+for sensor_id in 0 1 2; do
+  ./scripts/probe_argus_camera.sh "$sensor_id" 120
+done
 ros2 launch deepstream deepstream.launch.py \
   params_file:=config/csi_3cam.yaml \
   display:=false
 ```
 
-在启动完整 CSI profile 前，必须逐个验证 `sensor-id=0/1/2`，并确认输出没有 `No cameras available`。`gst-launch-1.0` 在 Argus 错误后可能仍返回 0，不能只看退出码。
+启动完整 CSI profile 前，必须逐个验证 `sensor-id=0/1/2`，并确认每一路真实输出 120 个 buffer 且没有 Argus 错误。`gst-launch-1.0` 在 Argus 错误后可能仍返回 0，不能只看退出码。
 
 三路 V4L2 fallback：
 

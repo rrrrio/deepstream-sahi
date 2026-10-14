@@ -21,34 +21,19 @@ cd ~/wp/deepstream-sahi
 ./scripts/check_runtime.sh --require-argus
 ```
 
-缺少任一资源时，先按[运行时要求](../reference/runtime-requirements.md)检查容器启动参数。`--require-argus` 只确认 socket 和 GPU 资源存在，不能证明 sensor 能取帧；应用内的 source 分类检查也不能替代宿主机相机检查。
+缺少任一资源时，先按[运行时要求](../reference/runtime-requirements.md)检查容器启动参数。`--require-argus` 只确认 DeepStream、GPU、`nvarguscamerasrc` 插件和 socket 资源存在，不能证明 sensor 能取帧；应用内的 source 分类检查也不能替代宿主机相机检查。
 
 ## 逐路检查 sensor ID
 
 在完整管线前直接检查每个 Argus sensor：
 
 ```bash
-set -o pipefail
-
 for sensor_id in 0 1 2; do
-  output=$(mktemp)
-  if ! gst-launch-1.0 -e nvarguscamerasrc sensor-id="${sensor_id}" num-buffers=120 \
-      ! 'video/x-raw(memory:NVMM),format=NV12,width=1920,height=1080,framerate=30/1' \
-      ! fakesink sync=false 2>&1 | tee "$output"; then
-    echo "Argus sensor ${sensor_id} failed: gst-launch returned non-zero"
-    rm -f "$output"
-    exit 1
-  fi
-  if grep -q 'No cameras available\|Failure to open Camera Kernel Node\|Camera node not detected' "$output"; then
-    echo "Argus sensor ${sensor_id} failed: camera enumeration error"
-    rm -f "$output"
-    exit 1
-  fi
-  rm -f "$output"
+  ./scripts/probe_argus_camera.sh "$sensor_id" 120
 done
 ```
 
-每个命令必须在 120 帧后结束，并且输出中不能出现 `No cameras available`。`gst-launch` 的退出码不能单独作为通过条件，因为 Argus 错误可能以 EOS 结束并返回 0。某个 sensor 单独失败时，不要继续三路启动。
+脚本会检查每个 sensor 是否实际输出 120 个 buffer，并检查 Argus 错误。`gst-launch` 的退出码不能单独作为通过条件，因为 Argus 错误可能以 EOS 结束并返回 0。某个 sensor 单独失败时，不要继续三路启动。
 
 ## 切换到三路 CSI
 

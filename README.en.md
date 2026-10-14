@@ -89,12 +89,15 @@ Three Argus CSI sources:
 
 ```bash
 ./scripts/check_runtime.sh --require-argus
+for sensor_id in 0 1 2; do
+  ./scripts/probe_argus_camera.sh "$sensor_id" 120
+done
 ros2 launch deepstream deepstream.launch.py \
   params_file:=config/csi_3cam.yaml \
   display:=false
 ```
 
-Before starting the CSI profile, test `sensor-id=0/1/2` independently. The output must not contain `No cameras available`. `gst-launch-1.0` can return 0 after an Argus error and EOS, so the exit status alone is not a valid success criterion.
+Before starting the CSI profile, test `sensor-id=0/1/2` independently. Each sensor must produce 120 real buffers without Argus errors. `gst-launch-1.0` can return 0 after an Argus error and EOS, so the exit status alone is not a valid success criterion.
 
 Three-camera V4L2 fallback:
 

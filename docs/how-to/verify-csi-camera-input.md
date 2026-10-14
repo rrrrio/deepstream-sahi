@@ -66,35 +66,19 @@ gst-inspect-1.0 nvarguscamerasrc
 test -S /tmp/argus_socket
 ```
 
-`--require-argus` 只证明 GPU、插件和 socket 资源存在，不证明 Argus 已发现相机。若检查报告 socket 缺失，先修正容器启动参数；若 socket 存在但仍无法取流，继续检查宿主机 Argus 日志和设备树。
+`--require-argus` 只证明 DeepStream、GPU、`nvarguscamerasrc` 插件和 socket 资源存在，不证明 Argus 已发现相机。若检查报告 socket 缺失，先修正容器启动参数；若 socket 存在但仍无法取流，继续检查宿主机 Argus 日志和设备树。若出现 `Authorization required` 或 `No EGL Display`，先修复 X11 授权和 EGL 资源，再判断相机输入。
 
 ## 3. 逐路验证 Argus
 
 不要直接启动三路完整管线。先逐个测试 sensor ID，并同时检查 GStreamer 退出状态和错误文本：
 
 ```bash
-set -o pipefail
 for sensor_id in 0 1 2; do
-  echo "=== sensor-id=$sensor_id ==="
-  output=$(mktemp)
-  if ! gst-launch-1.0 -e nvarguscamerasrc \
-      sensor-id="$sensor_id" num-buffers=120 \
-      ! 'video/x-raw(memory:NVMM),format=NV12,width=1920,height=1080,framerate=30/1' \
-      ! fakesink sync=false 2>&1 | tee "$output"; then
-    echo "Argus sensor $sensor_id failed: gst-launch returned non-zero"
-    rm -f "$output"
-    exit 1
-  fi
-  if grep -Eq 'No cameras available|Failure to open Camera Kernel Node|Camera node not detected' "$output"; then
-    echo "Argus sensor $sensor_id failed: camera enumeration error"
-    rm -f "$output"
-    exit 1
-  fi
-  rm -f "$output"
+  ./scripts/probe_argus_camera.sh "$sensor_id" 120
 done
 ```
 
-每一路都必须真实产生 120 帧，不能只依据 `Got EOS` 或退出码判断成功。`gst-launch-1.0` 可能在 Argus 错误后收到 EOS 并返回 0。
+脚本使用 GStreamer buffer tracer 统计实际输出的 120 个 buffer。每一路都必须通过计数和错误文本检查，不能只依据 `Got EOS` 或退出码判断成功。`gst-launch-1.0` 可能在 Argus 错误后收到 EOS 并返回 0。
 
 ## 4. 常见 Argus 问题
 
