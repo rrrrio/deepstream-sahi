@@ -16,6 +16,11 @@ class _GstStub:
     class Pipeline:
         pass
 
+    class Caps:
+        @staticmethod
+        def from_string(value):
+            return value
+
 
 gi_stub = types.ModuleType("gi")
 gi_stub.require_version = lambda *_args: None
@@ -25,13 +30,6 @@ gi_stub.repository = gi_repository
 sys.modules.setdefault("gi", gi_stub)
 sys.modules.setdefault("gi.repository", gi_repository)
 sys.modules.setdefault("pyds", types.ModuleType("pyds"))
-
-geometry_msgs = types.ModuleType("geometry_msgs")
-geometry_msgs_msg = types.ModuleType("geometry_msgs.msg")
-geometry_msgs_msg.Point = type("Point", (), {})
-geometry_msgs.msg = geometry_msgs_msg
-sys.modules.setdefault("geometry_msgs", geometry_msgs)
-sys.modules.setdefault("geometry_msgs.msg", geometry_msgs_msg)
 
 std_msgs = types.ModuleType("std_msgs")
 std_msgs_msg = types.ModuleType("std_msgs.msg")
@@ -99,6 +97,64 @@ def test_ntp_timestamp_conversion_uses_nanoseconds():
 
     assert ntp_timestamp_parts(1_234_567_890) == (1, 234_567_890)
     assert ntp_timestamp_parts(0) is None
+
+
+def test_allowed_class_ids_are_validated_and_deduplicated():
+    from deepstream.metadata_utils import normalize_allowed_class_ids
+
+    assert normalize_allowed_class_ids([2, 0, 2]) == [2, 0]
+    assert normalize_allowed_class_ids([]) == []
+
+    with pytest.raises(ValueError, match="non-negative integers"):
+        normalize_allowed_class_ids([-1])
+    with pytest.raises(ValueError, match="non-negative integers"):
+        normalize_allowed_class_ids([True])
+
+
+def test_class_filter_removes_only_disallowed_objects():
+    from deepstream.metadata_utils import filter_object_metadata
+
+    class Node:
+        def __init__(self, data, next_node=None):
+            self.data = data
+            self.next = next_node
+
+    class Frame:
+        def __init__(self, objects):
+            self.obj_meta_list = objects
+
+    objects = [
+        types.SimpleNamespace(class_id=0),
+        types.SimpleNamespace(class_id=2),
+        types.SimpleNamespace(class_id=7),
+    ]
+    object_nodes = Node(objects[2])
+    object_nodes = Node(objects[1], object_nodes)
+    object_nodes = Node(objects[0], object_nodes)
+    frame = Frame(object_nodes)
+    frame_node = Node(frame)
+    batch = types.SimpleNamespace(frame_meta_list=frame_node)
+    removed = []
+
+    class Lock:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    pyds_module = types.SimpleNamespace(
+        NvDsFrameMeta=types.SimpleNamespace(cast=lambda value: value),
+        NvDsObjectMeta=types.SimpleNamespace(cast=lambda value: value),
+        nvds_acquire_meta_lock=lambda _batch: Lock(),
+        nvds_remove_obj_meta_from_frame=lambda _frame, obj: removed.append(
+            obj.class_id
+        ),
+    )
+
+    filter_object_metadata(batch, [0, 2], pyds_module)
+
+    assert removed == [7]
 
 
 def test_runtime_infer_config_uses_writable_batch_specific_engine(tmp_path):
@@ -233,6 +289,9 @@ class _FakePad:
         self.peer = peer
         return 0
 
+    def is_linked(self):
+        return self.peer is not None
+
 
 class _FakeElement:
     def __init__(self, name, supported_properties=()):
@@ -352,6 +411,76 @@ def test_display_queue_drops_frames_when_the_osd_sink_stalls(monkeypatch):
     assert elements["queue-display"].properties["leaky"] == 2
     assert elements["queue-display"].properties["max-size-buffers"] == 1
     assert elements["display-sink"].properties["async"] is False
+
+
+def test_annotated_output_creates_one_nvjpeg_appsink_per_source(monkeypatch):
+    from deepstream import pipeline_common
+
+    class FakePipeline:
+        def add(self, _element):
+            return True
+
+    class LinkableElement(_FakeElement):
+        def __init__(self, name):
+            super().__init__(name)
+            self.pads["sink"] = _FakePad()
+            self.callbacks = {}
+
+        def link(self, _downstream):
+            return True
+
+        def connect(self, signal, callback, data):
+            self.callbacks[signal] = (callback, data)
+
+    elements = {}
+
+    def make(factory, name):
+        element = LinkableElement(name)
+        element.factory = factory
+        elements[name] = element
+        return element
+
+    monkeypatch.setattr(pipeline_common, "make_element", make)
+    monkeypatch.setattr(
+        pipeline_common.Gst,
+        "PadLinkReturn",
+        types.SimpleNamespace(OK=0),
+        raising=False,
+    )
+
+    appsinks = pipeline_common.add_output_branches(
+        pipeline=FakePipeline(),
+        upstream=LinkableElement("upstream"),
+        display=False,
+        publish_annotated=True,
+        source_names=["camera_0", "camera_1"],
+    )
+
+    assert set(appsinks) == {"camera_0", "camera_1"}
+    assert elements["jpeg-encoder-camera_0"].factory == "nvjpegenc"
+    assert elements["jpeg-encoder-camera_1"].factory == "nvjpegenc"
+    assert "videoconv-annotated" not in elements
+    assert elements["queue-annotated-camera_0"].properties == {
+        "leaky": 2,
+        "max-size-buffers": 1,
+    }
+
+    demux = elements["annotated-demux"]
+    callback, branches = demux.callbacks["pad-added"]
+    callback(
+        demux,
+        types.SimpleNamespace(
+            get_name=lambda: "src_1",
+            link=lambda pad: setattr(
+                elements["queue-annotated-camera_1"].pads["sink"],
+                "peer",
+                pad,
+            )
+            or 0,
+        ),
+        branches,
+    )
+    assert elements["queue-annotated-camera_1"].pads["sink"].peer is not None
 
 
 def test_tracker_tensor_meta_is_configured_only_when_requested(tmp_path):

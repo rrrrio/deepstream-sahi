@@ -13,7 +13,7 @@ _OPTIONAL_OVERRIDES = (
     "display",
     "publish_detections",
     "publish_annotated",
-    "publish_best_target",
+    "allowed_class_ids",
 )
 
 
@@ -33,6 +33,23 @@ def _parse_bool(value):
     raise ValueError(f"Boolean launch override has invalid value: {value!r}")
 
 
+def _parse_class_ids(value):
+    values = [item.strip() for item in value.split(",") if item.strip()]
+    if not values:
+        return []
+    try:
+        parsed = [int(item) for item in values]
+    except ValueError as exc:
+        raise ValueError(
+            "allowed_class_ids launch override must be comma-separated integers"
+        ) from exc
+    if any(item < 0 for item in parsed):
+        raise ValueError(
+            "allowed_class_ids launch override must be non-negative"
+        )
+    return parsed
+
+
 def _create_node(context):
     """Apply launch overrides only when the caller supplied a non-empty value."""
     parameters = [LaunchConfiguration("params_file")]
@@ -40,7 +57,11 @@ def _create_node(context):
     for name in _OPTIONAL_OVERRIDES:
         value = LaunchConfiguration(name).perform(context).strip()
         if value:
-            overrides[name] = _parse_bool(value)
+            overrides[name] = (
+                _parse_class_ids(value)
+                if name == "allowed_class_ids"
+                else _parse_bool(value)
+            )
     if overrides:
         parameters.append(overrides)
 
@@ -87,7 +108,7 @@ def generate_launch_description():
             DeclareLaunchArgument("display", default_value=""),
             DeclareLaunchArgument("publish_detections", default_value=""),
             DeclareLaunchArgument("publish_annotated", default_value=""),
-            DeclareLaunchArgument("publish_best_target", default_value=""),
+            DeclareLaunchArgument("allowed_class_ids", default_value=""),
             DeclareLaunchArgument("runtime_preflight", default_value="true"),
             OpaqueFunction(function=_preflight_runtime),
             OpaqueFunction(function=_create_node),

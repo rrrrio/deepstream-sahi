@@ -20,4 +20,4 @@ deepstream_node:
     display: true
     publish_detections: false
     publish_annotated: false
-    publish_best_target: false
+    allowed_class_ids: []

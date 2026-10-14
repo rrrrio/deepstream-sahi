@@ -11,7 +11,7 @@ import math
 import pathlib
 import sys
 from dataclasses import dataclass, field, replace
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
 import gi
@@ -52,6 +52,7 @@ class PipelineBuildParams:
     tracker_config: Optional[str] = None
     display: bool = True
     publish_annotated: bool = False
+    allowed_class_ids: List[int] = field(default_factory=list)
     width: int = 1920
     height: int = 1080
     tiled_width: int = 1280
@@ -77,8 +78,9 @@ class PipelineBuildParams:
 class PipelineBuildResult:
     pipeline: Gst.Pipeline
     pgie: Gst.Element
-    appsink: Optional[Gst.Element]
+    annotated_appsinks: Dict[str, Gst.Element]
     metadata_probe_element: Gst.Element
+    class_filter_element: Optional[Gst.Element] = None
     has_native_postprocess: bool = False
 
 
@@ -531,7 +533,12 @@ def add_output_branches(
     upstream: Gst.Element,
     display: bool,
     publish_annotated: bool,
-) -> Optional[Gst.Element]:
+    source_names: Optional[List[str]] = None,
+    tiled_width: int = 1280,
+    tiled_height: int = 720,
+) -> Dict[str, Gst.Element]:
+    """Attach display and per-source compressed annotated output branches."""
+    source_names = list(source_names or ["camera_0"])
     tee = make_element("tee", "tee-output")
     queue_display = make_element("queue", "queue-display")
     sink = (
@@ -559,51 +566,148 @@ def add_output_branches(
         )
     if not tee.link(queue_display):
         raise RuntimeError("Unable to link tee -> display queue")
-    if not queue_display.link(sink):
+    if display:
+        tiler = make_element("nvmultistreamtiler", "tiler")
+        queue_tiler = make_element("queue", "queue-tiler")
+        nvvidconv = make_element("nvvideoconvert", "nvvidconv")
+        queue_conv = make_element("queue", "queue-conv")
+        nvosd = make_element("nvdsosd", "nvosd")
+        queue_output = make_element("queue", "queue-output")
+        configure_tiler(tiler, tiled_width, tiled_height, len(source_names))
+        for element in [
+            tiler,
+            queue_tiler,
+            nvvidconv,
+            queue_conv,
+            nvosd,
+            queue_output,
+        ]:
+            pipeline.add(element)
+        link_elements(
+            queue_display,
+            tiler,
+            queue_tiler,
+            nvvidconv,
+            queue_conv,
+            nvosd,
+            queue_output,
+            sink,
+        )
+    elif not queue_display.link(sink):
         raise RuntimeError("Unable to link display queue -> sink")
 
-    appsink = None
+    annotated_appsinks: Dict[str, Gst.Element] = {}
     if publish_annotated:
+        if not source_names:
+            raise ValueError(
+                "source_names are required when publish_annotated is enabled"
+            )
+
         queue_annotated = make_element("queue", "queue-annotated")
         nvconv_annotated = make_element("nvvideoconvert", "nvconv-annotated")
-        caps_rgba = make_element("capsfilter", "caps-rgba")
-        videoconv = make_element("videoconvert", "videoconv-annotated")
-        caps_bgr = make_element("capsfilter", "caps-bgr")
-        appsink = make_element("appsink", "annotated-appsink")
-
+        caps_rgba = make_element("capsfilter", "caps-annotated-rgba")
+        nvosd_annotated = make_element("nvdsosd", "nvosd-annotated")
+        queue_osd = make_element("queue", "queue-annotated-osd")
+        demux = make_element("nvstreamdemux", "annotated-demux")
         caps_rgba.set_property(
-            "caps", Gst.Caps.from_string("video/x-raw,format=RGBA")
+            "caps",
+            Gst.Caps.from_string("video/x-raw(memory:NVMM),format=RGBA"),
         )
-        caps_bgr.set_property(
-            "caps", Gst.Caps.from_string("video/x-raw,format=BGR")
-        )
-        appsink.set_property("emit-signals", True)
-        appsink.set_property("sync", False)
-        appsink.set_property("drop", True)
-        appsink.set_property("max-buffers", 1)
-
+        queue_annotated.set_property("leaky", 2)
+        queue_annotated.set_property("max-size-buffers", 1)
+        queue_osd.set_property("leaky", 2)
+        queue_osd.set_property("max-size-buffers", 1)
         for element in [
             queue_annotated,
             nvconv_annotated,
             caps_rgba,
-            videoconv,
-            caps_bgr,
-            appsink,
+            nvosd_annotated,
+            queue_osd,
+            demux,
         ]:
             pipeline.add(element)
-
         if not tee.link(queue_annotated):
             raise RuntimeError("Unable to link tee -> annotated queue")
         link_elements(
             queue_annotated,
             nvconv_annotated,
             caps_rgba,
-            videoconv,
-            caps_bgr,
-            appsink,
+            nvosd_annotated,
+            queue_osd,
+            demux,
         )
 
-    return appsink
+        demux_branches = {}
+        for source_index, source_name in enumerate(source_names):
+            queue_source = make_element(
+                "queue", f"queue-annotated-{source_name}"
+            )
+            nvconv_source = make_element(
+                "nvvideoconvert", f"nvconv-jpeg-{source_name}"
+            )
+            caps_nv12 = make_element(
+                "capsfilter", f"caps-jpeg-input-{source_name}"
+            )
+            jpeg_encoder = make_element(
+                "nvjpegenc", f"jpeg-encoder-{source_name}"
+            )
+            caps_jpeg = make_element(
+                "capsfilter", f"caps-jpeg-output-{source_name}"
+            )
+            appsink = make_element(
+                "appsink", f"annotated-appsink-{source_name}"
+            )
+            queue_source.set_property("leaky", 2)
+            queue_source.set_property("max-size-buffers", 1)
+            caps_nv12.set_property(
+                "caps",
+                Gst.Caps.from_string("video/x-raw(memory:NVMM),format=NV12"),
+            )
+            caps_jpeg.set_property("caps", Gst.Caps.from_string("image/jpeg"))
+            appsink.set_property("emit-signals", True)
+            appsink.set_property("sync", False)
+            appsink.set_property("async", False)
+            appsink.set_property("drop", True)
+            appsink.set_property("max-buffers", 1)
+            for element in [
+                queue_source,
+                nvconv_source,
+                caps_nv12,
+                jpeg_encoder,
+                caps_jpeg,
+                appsink,
+            ]:
+                pipeline.add(element)
+            link_elements(
+                queue_source,
+                nvconv_source,
+                caps_nv12,
+                jpeg_encoder,
+                caps_jpeg,
+                appsink,
+            )
+            demux_branches[source_index] = queue_source
+            annotated_appsinks[source_name] = appsink
+
+        def on_demux_pad(_demux, pad, branches):
+            try:
+                source_index = int(pad.get_name().rsplit("_", 1)[1])
+            except (AttributeError, IndexError, ValueError):
+                return
+            queue_source = branches.get(source_index)
+            if queue_source is None:
+                return
+            sink_pad = queue_source.get_static_pad("sink")
+            if sink_pad is None or sink_pad.is_linked():
+                return
+            if pad.link(sink_pad) != Gst.PadLinkReturn.OK:
+                raise RuntimeError(
+                    f"Unable to link annotated demux source {source_index}"
+                )
+
+        demux.connect("pad-added", on_demux_pad, demux_branches)
+
+    return annotated_appsinks
 
 
 # ─── config file helpers ──────────────────────────────────────────────

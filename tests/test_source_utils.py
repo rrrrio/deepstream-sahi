@@ -104,6 +104,15 @@ def test_display_v4l2_does_not_override_egl_platform(monkeypatch):
     assert source_utils.os.environ["EGL_PLATFORM"] == "x11"
 
 
+def test_headless_v4l2_annotated_output_selects_surfaceless_egl(monkeypatch):
+    monkeypatch.setenv("EGL_PLATFORM", "x11")
+
+    assert source_utils.configure_headless_v4l2_egl(
+        ["/dev/video0"], False, True
+    )
+    assert source_utils.os.environ["EGL_PLATFORM"] == "surfaceless"
+
+
 def test_classifies_argus_sources_and_validates_sensor_id():
     assert source_utils.is_argus_source("argus://2")
     assert is_live_source("argus://2")

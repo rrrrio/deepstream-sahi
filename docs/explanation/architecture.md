@@ -14,17 +14,23 @@ flowchart LR
     P --> I[nvinfer tensor batches]
     I --> N[SAHI postprocess NMM]
     N --> T[nvtracker]
-    T --> R[metadata probe]
-    R --> Y[每路 ROS topic]
-    R --> L[nvmultistreamtiler]
+    T --> F[allowed_class_ids 过滤]
+    F --> R[metadata probe]
+    R --> Y[每路检测 ROS topic]
+    F --> B[输出 tee]
+    B --> L[nvmultistreamtiler]
     L --> O[nvdsosd]
     O --> D[显示或无窗口 sink]
+    B --> A[nvdsosd]
+    A --> X[nvstreamdemux]
+    X --> J[每路 nvjpegenc]
+    J --> C[CompressedImage JPEG topic]
 
     classDef source fill:#E8F3FF,stroke:#2563EB,color:#0F172A;
     classDef process fill:#F2ECFF,stroke:#7C3AED,color:#2E1065;
     classDef output fill:#E7F8F1,stroke:#047857,color:#064E3B;
     class S source;
-    class M,P,I,N,T,L,O process;
+    class M,P,I,N,T,F,B,L,O,A,X,J process;
     class R,Y,D output;
 ```
 
@@ -46,8 +52,9 @@ source bin 按 source 类型选择取流器：`argus://N` 进入 `nvarguscameras
 
 显示 sink 是可选末端。`display:=false` 时，管线仍可运行 metadata probe 和 ROS
 publisher，不创建可见窗口；native SAHI allocator 仍需要 NVIDIA EGL 资源，无窗口
-模式使用 surfaceless EGL，显示模式再增加 X11 资源。`publish_annotated` 是另一条可选图像输出，默认关闭以避免额外的
-appsink 和图像复制。
+模式使用 surfaceless EGL，显示模式再增加 X11 资源。`publish_annotated` 从 tracker
+后旁路，经过逐路 OSD、`nvstreamdemux` 和 NVIDIA JPEG encoder，最终只在 appsink
+边界复制 JPEG 字节，不复制 raw BGR 帧。
 
 ## 相关文档
 

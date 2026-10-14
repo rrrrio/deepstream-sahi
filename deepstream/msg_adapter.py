@@ -7,7 +7,6 @@ Author: Yuhao Ding
 
 from typing import Dict, List, Optional
 
-from geometry_msgs.msg import Point
 from std_msgs.msg import Header
 
 import pyds
@@ -181,16 +180,3 @@ def update_osd_labels(frame_meta, source_name: str):
             l_obj = l_obj.next
         except StopIteration:
             break
-
-
-def build_best_target_msg(detections: List[Dict]) -> Optional[Point]:
-    if not detections:
-        return None
-
-    best = max(detections, key=lambda det: det["confidence"])
-    x1, y1, x2, y2 = best["bbox"]
-    point = Point()
-    point.x = float((x1 + x2) / 2.0)
-    point.y = float((y1 + y2) / 2.0)
-    point.z = 0.0
-    return point

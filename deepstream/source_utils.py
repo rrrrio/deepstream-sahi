@@ -101,7 +101,6 @@ def configure_headless_v4l2_egl(
         resolved_sources
         and all(is_v4l2_source(source) for source in resolved_sources)
         and not display
-        and not publish_annotated
     ):
         os.environ["EGL_PLATFORM"] = "surfaceless"
         return True

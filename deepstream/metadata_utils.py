@@ -1,6 +1,74 @@
-"""Pure helpers for DeepStream metadata conversion."""
+"""Helpers for DeepStream metadata conversion and filtering."""
 
-from typing import Optional, Tuple
+from numbers import Integral
+from typing import Iterable, Optional, Tuple
+
+
+def normalize_allowed_class_ids(values: Iterable[int]) -> list[int]:
+    """Validate and normalize the configured detector class IDs."""
+    normalized = []
+    for value in values or []:
+        if isinstance(value, bool) or not isinstance(value, Integral):
+            raise ValueError(
+                "allowed_class_ids must contain only non-negative integers"
+            )
+        value = int(value)
+        if value < 0:
+            raise ValueError(
+                "allowed_class_ids must contain only non-negative integers"
+            )
+        if value not in normalized:
+            normalized.append(value)
+    return normalized
+
+
+def filter_object_metadata(batch_meta, allowed_class_ids, pyds_module):
+    """Remove objects outside the allow-list from a DeepStream batch.
+
+    The caller supplies the imported ``pyds`` module so this helper remains
+    testable without importing the platform-specific bindings.
+    """
+    allowed = set(allowed_class_ids)
+    if not allowed:
+        return
+
+    acquire_lock = getattr(pyds_module, "nvds_acquire_meta_lock", None)
+    remove_object = getattr(
+        pyds_module, "nvds_remove_obj_meta_from_frame", None
+    )
+    if acquire_lock is None or remove_object is None:
+        raise RuntimeError(
+            "DeepStream pyds bindings must provide metadata locking and "
+            "nvds_remove_obj_meta_from_frame for class filtering"
+        )
+
+    with acquire_lock(batch_meta):
+        l_frame = batch_meta.frame_meta_list
+        while l_frame is not None:
+            try:
+                frame_meta = pyds_module.NvDsFrameMeta.cast(l_frame.data)
+            except StopIteration:
+                break
+
+            l_obj = frame_meta.obj_meta_list
+            while l_obj is not None:
+                try:
+                    next_l_obj = l_obj.next
+                except StopIteration:
+                    next_l_obj = None
+                try:
+                    obj_meta = pyds_module.NvDsObjectMeta.cast(l_obj.data)
+                except StopIteration:
+                    break
+
+                if int(obj_meta.class_id) not in allowed:
+                    remove_object(frame_meta, obj_meta)
+                l_obj = next_l_obj
+
+            try:
+                l_frame = l_frame.next
+            except StopIteration:
+                break
 
 
 def select_confidence(

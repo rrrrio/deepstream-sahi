@@ -110,14 +110,16 @@ publish_detections: true
 | `tracker_config` | string / 包内默认 | tracker 配置文件路径。 |
 | `display` | bool / `true` | 是否创建显示 sink；关闭后使用 headless 路径。 |
 | `publish_detections` | bool / `false` | 是否按 source 发布 `Detection2DArray`。 |
-| `publish_annotated` | bool / `false` | 是否发布标注图像。 |
-| `publish_best_target` | bool / `false` | 是否发布最高置信度目标中心点。 |
+| `publish_annotated` | bool / `false` | 是否按 source 发布 GPU JPEG 标注图像。 |
+| `allowed_class_ids` | int[] / `[]` | 允许发布和跟踪的数字类别 ID；空列表表示不过滤。 |
 | `infer_config` | string / 按 mode | nvinfer 配置文件路径。 |
 | `preprocess_config` | string / SAHI 包内默认 | 原生 SAHI preprocess 配置；SAHI 模式必须提供有效文件。 |
 | `engine_cache_dir` | string / 项目缓存 | TensorRT runtime 配置和 engine 的可写缓存目录。 |
 | `batched_push_timeout` | int / `40000` | streammux batched push timeout，单位为微秒。 |
 
 `sources` 和 `source_names` 的校验失败会在管线启动前报错。三路示例见 [`config/sim_3cam.yaml`](../../config/sim_3cam.yaml)、[`config/csi_3cam.yaml`](../../config/csi_3cam.yaml) 和 [`config/v4l2_3cam.yaml`](../../config/v4l2_3cam.yaml)。
+
+类别过滤示例：`allowed_class_ids: [0, 2]`。通过 launch 覆盖时使用逗号分隔格式，例如 `allowed_class_ids:=0,2`；空列表不安装过滤 probe。
 
 `deepstream.launch.py` 当前默认选择 `sim_3cam_headless.yaml`，该 profile 自身设置
 `display=false`、`publish_detections=true`，用于先验收三路文件到检测 topic。只有在

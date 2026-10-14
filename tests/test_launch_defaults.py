@@ -41,7 +41,7 @@ def test_launch_leaves_optional_values_to_the_selected_profile():
     assert defaults["display"] == ""
     assert defaults["publish_detections"] == ""
     assert defaults["publish_annotated"] == ""
-    assert defaults["publish_best_target"] == ""
+    assert defaults["allowed_class_ids"] == ""
 
 
 def test_default_profile_is_the_three_file_headless_profile():
@@ -111,7 +111,7 @@ def _launch_context(values):
             "display": "",
             "publish_detections": "",
             "publish_annotated": "",
-            "publish_best_target": "",
+            "allowed_class_ids": "",
             "runtime_preflight": "true",
         }
     )
@@ -141,6 +141,15 @@ def test_explicit_launch_overrides_are_appended_after_profile(monkeypatch):
     parameters = node.kwargs["parameters"]
     assert parameters[0].perform(context) == "/tmp/profile.yaml"
     assert parameters[1] == {"display": True, "publish_detections": False}
+
+
+def test_class_id_launch_override_is_parsed_as_an_integer_array(monkeypatch):
+    module = _load_launch_module(monkeypatch)
+
+    context = _launch_context({"allowed_class_ids": "0, 2"})
+    node = module._create_node(context)[0]
+
+    assert node.kwargs["parameters"][1] == {"allowed_class_ids": [0, 2]}
 
 
 def test_preflight_allows_a_mapped_jetson_runtime(monkeypatch):

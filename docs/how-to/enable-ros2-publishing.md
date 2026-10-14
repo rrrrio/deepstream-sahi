@@ -43,8 +43,8 @@ ros2 topic hz /deepstream/camera_0/detections
 
 ## 可选输出
 
-- `publish_annotated:=true` 发布 `/deepstream/image/annotated`，需要图像消息依赖和 appsink。
-- `publish_best_target:=true` 发布 `/deepstream/target_pixel`，内容是当前帧最高置信度目标的中心点。
+- `publish_annotated:=true` 按 source 发布 `/deepstream/<source_name>/image/annotated/compressed`，消息类型为 `sensor_msgs/msg/CompressedImage`。
+- `allowed_class_ids:=0,2`（或在 YAML 中使用 `[0, 2]`）只保留指定数字类别；空列表表示保留全部类别。
 - `/deepstream/status` 始终用于报告节点状态，如 `initialized` 和 `running`。
 
 字段、置信度回退和 tracker ID 的完整定义见[ROS 2 话题参考](../reference/ros2-topics.md)。

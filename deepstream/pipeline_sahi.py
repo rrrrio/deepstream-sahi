@@ -21,7 +21,6 @@ from .pipeline_common import (  # noqa: E402
     attach_source_to_streammux,
     configure_primary_gie,
     configure_streammux,
-    configure_tiler,
     configure_tracker,
     create_source_bin,
     link_elements,
@@ -128,25 +127,11 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
         tracker = make_element("nvtracker", "tracker")
         queue_tracker = make_element("queue", "queue-tracker")
 
-    visual_output = params.display or params.publish_annotated
-    tiler = queue4 = nvvidconv = queue5 = nvosd = queue6 = None
-    if visual_output:
-        tiler = make_element("nvmultistreamtiler", "tiler")
-        queue4 = make_element("queue", "queue-tiler")
-        nvvidconv = make_element("nvvideoconvert", "nvvidconv")
-        queue5 = make_element("queue", "queue-conv")
-        nvosd = make_element("nvdsosd", "nvosd")
-        queue6 = make_element("queue", "queue-output")
-
     # Add all elements to pipeline
     for source_bin in source_bins:
         pipeline.add(source_bin)
     for el in [streammux, queue1, preprocess, queue2, pgie, queue3]:
         pipeline.add(el)
-    if visual_output:
-        for el in [tiler, queue4, nvvidconv, queue5, nvosd, queue6]:
-            pipeline.add(el)
-
     if merge_enabled:
         pipeline.add(postprocess)
         pipeline.add(queue_post)
@@ -165,10 +150,6 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
         det_interval=params.det_interval,
         input_tensor_meta=True,
     )
-    if visual_output:
-        configure_tiler(
-            tiler, params.tiled_width, params.tiled_height, len(params.sources)
-        )
     if tracker and params.tracker_config:
         configure_tracker(tracker, params.tracker_config)
     if tracker_caps:
@@ -197,26 +178,22 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
     else:
         post_tracker = post_pgie
 
-    if visual_output:
-        link_elements(
-            post_tracker, tiler, queue4, nvvidconv, queue5, nvosd, queue6
-        )
-        output_upstream = queue6
-    else:
-        output_upstream = post_tracker
-
-    appsink = add_output_branches(
+    annotated_appsinks = add_output_branches(
         pipeline=pipeline,
-        upstream=output_upstream,
+        upstream=post_tracker,
         display=params.display,
         publish_annotated=params.publish_annotated,
+        source_names=params.source_names,
+        tiled_width=params.tiled_width,
+        tiled_height=params.tiled_height,
     )
 
     metadata_probe_element = queue_tracker if tracker else post_pgie
     return PipelineBuildResult(
         pipeline=pipeline,
         pgie=pgie,
-        appsink=appsink,
+        annotated_appsinks=annotated_appsinks,
         metadata_probe_element=metadata_probe_element,
+        class_filter_element=queue3,
         has_native_postprocess=merge_enabled,
     )

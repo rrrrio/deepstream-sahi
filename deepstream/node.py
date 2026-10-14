@@ -10,15 +10,13 @@ import threading
 from typing import Generator, Optional
 
 import gi
-import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from builtin_interfaces.msg import Time
-from geometry_msgs.msg import Point
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 
 gi.require_version("Gst", "1.0")
@@ -35,13 +33,16 @@ from .config_validator import (  # noqa: E402
 from .msg_adapter import (  # noqa: E402
     HAS_VISION_MSGS,
     Detection2DArray,
-    build_best_target_msg,
     build_detection_array_msg,
     extract_detections,
     update_osd_labels,
 )
 from .pipeline_base import build_pipeline as build_base_pipeline  # noqa: E402
 from .metadata_utils import ntp_timestamp_parts  # noqa: E402
+from .metadata_utils import (  # noqa: E402
+    filter_object_metadata,
+    normalize_allowed_class_ids,
+)
 from .pipeline_common import (  # noqa: E402
     MergeConfig,
     PipelineBuildParams,
@@ -63,11 +64,12 @@ class DeepStreamNode(Node):
 
         self._pipeline = None
         self._pgie = None
-        self._appsink = None
+        self._annotated_appsinks = {}
         self._bus = None
         self._bus_thread = None
         self._running = False
         self._merge_cfg = None
+        self._latest_source_stamps = {}
 
         self._declare_parameters()
         self._resolve_runtime_config()
@@ -90,7 +92,9 @@ class DeepStreamNode(Node):
         self.declare_parameter("display", True)
         self.declare_parameter("publish_annotated", False)
         self.declare_parameter("publish_detections", False)
-        self.declare_parameter("publish_best_target", False)
+        self.declare_parameter(
+            "allowed_class_ids", Parameter.Type.INTEGER_ARRAY
+        )
         self.declare_parameter("merge_enabled", True)
         self.declare_parameter("merge_metric", "ios")
         self.declare_parameter("merge_threshold", 0.5)
@@ -174,8 +178,8 @@ class DeepStreamNode(Node):
         self.publish_detections = bool(
             self.get_parameter("publish_detections").value
         )
-        self.publish_best_target = bool(
-            self.get_parameter("publish_best_target").value
+        self.allowed_class_ids = normalize_allowed_class_ids(
+            self.get_parameter("allowed_class_ids").value or []
         )
         merge_enabled = bool(self.get_parameter("merge_enabled").value)
         merge_metric = (
@@ -269,6 +273,7 @@ class DeepStreamNode(Node):
             tracker_config=tracker_config,
             display=self.display,
             publish_annotated=self.publish_annotated,
+            allowed_class_ids=self.allowed_class_ids,
             width=width,
             height=height,
             tiled_width=int(self.get_parameter("tiled_width").value),
@@ -310,8 +315,7 @@ class DeepStreamNode(Node):
             String, "/deepstream/status", 10
         )
         self.detection_publishers = {}
-        self.target_pub = None
-        self.annotated_pub = None
+        self.annotated_publishers = {}
 
         if self.publish_detections:
             if HAS_VISION_MSGS:
@@ -330,14 +334,12 @@ class DeepStreamNode(Node):
                 )
                 self.publish_detections = False
 
-        if self.publish_best_target:
-            self.target_pub = self.create_publisher(
-                Point, "/deepstream/target_pixel", 10
-            )
         if self.publish_annotated:
-            self.annotated_pub = self.create_publisher(
-                Image, "/deepstream/image/annotated", 10
-            )
+            for source_name in self.source_names:
+                topic = f"/deepstream/{source_name}/image/annotated/compressed"
+                self.annotated_publishers[source_name] = self.create_publisher(
+                    CompressedImage, topic, 1
+                )
 
         self._publish_status("initialized")
 
@@ -365,7 +367,7 @@ class DeepStreamNode(Node):
 
         self._pipeline = result.pipeline
         self._pgie = result.pgie
-        self._appsink = result.appsink
+        self._annotated_appsinks = result.annotated_appsinks
 
         if result.has_native_postprocess:
             self.get_logger().info(
@@ -381,8 +383,19 @@ class DeepStreamNode(Node):
             None,
         )
 
-        if self._appsink is not None and self.publish_annotated:
-            self._appsink.connect("new-sample", self._on_new_sample)
+        if self.allowed_class_ids:
+            filter_pad = result.class_filter_element.get_static_pad("src")
+            if not filter_pad:
+                raise RuntimeError("Unable to get class filter src pad")
+            filter_pad.add_probe(
+                Gst.PadProbeType.BUFFER,
+                self._class_filter_probe,
+                None,
+            )
+
+        if self.publish_annotated:
+            for source_name, appsink in self._annotated_appsinks.items():
+                appsink.connect("new-sample", self._on_new_sample, source_name)
 
         self._bus = self._pipeline.get_bus()
 
@@ -417,6 +430,20 @@ class DeepStreamNode(Node):
         sec, nanosec = parts
         return Time(sec=sec, nanosec=nanosec)
 
+    def _class_filter_probe(self, pad, info, user_data):
+        gst_buffer = info.get_buffer()
+        if not gst_buffer:
+            return Gst.PadProbeReturn.OK
+
+        batch_meta = pyds.gst_buffer_get_nvds_batch_meta(hash(gst_buffer))
+        if batch_meta:
+            filter_object_metadata(
+                batch_meta,
+                self.allowed_class_ids,
+                pyds,
+            )
+        return Gst.PadProbeReturn.OK
+
     def _metadata_probe(self, pad, info, user_data):
         gst_buffer = info.get_buffer()
         if not gst_buffer:
@@ -435,6 +462,7 @@ class DeepStreamNode(Node):
                 continue
             source_name = self.source_names[source_id]
             stamp = self._frame_stamp(frame_meta)
+            self._latest_source_stamps[source_name] = stamp
             update_osd_labels(frame_meta, source_name)
             detections = extract_detections(frame_meta)
 
@@ -446,14 +474,9 @@ class DeepStreamNode(Node):
                 if det_msg is not None:
                     publisher.publish(det_msg)
 
-            if self.target_pub is not None:
-                target_msg = build_best_target_msg(detections)
-                if target_msg is not None:
-                    self.target_pub.publish(target_msg)
-
         return Gst.PadProbeReturn.OK
 
-    def _on_new_sample(self, sink):
+    def _on_new_sample(self, sink, source_name):
         sample = sink.emit("pull-sample")
         if sample is None:
             return Gst.FlowReturn.ERROR
@@ -463,32 +486,21 @@ class DeepStreamNode(Node):
         if gst_buffer is None or caps is None:
             return Gst.FlowReturn.ERROR
 
-        structure = caps.get_structure(0)
-        width = int(structure.get_value("width"))
-        height = int(structure.get_value("height"))
-
         success, map_info = gst_buffer.map(Gst.MapFlags.READ)
         if not success:
             return Gst.FlowReturn.ERROR
 
         try:
-            frame = np.frombuffer(map_info.data, dtype=np.uint8)
-            expected = width * height * 3
-            if frame.size < expected:
-                return Gst.FlowReturn.OK
-            frame = frame[:expected]
-
-            msg = Image()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.header.frame_id = "deepstream_camera"
-            msg.height = height
-            msg.width = width
-            msg.encoding = "bgr8"
-            msg.is_bigendian = 0
-            msg.step = width * 3
-            msg.data = frame.tobytes()
-            if self.annotated_pub is not None:
-                self.annotated_pub.publish(msg)
+            msg = CompressedImage()
+            msg.header.stamp = self._latest_source_stamps.get(
+                source_name, self.get_clock().now().to_msg()
+            )
+            msg.header.frame_id = source_name
+            msg.format = "jpeg"
+            msg.data = bytes(map_info.data)
+            publisher = self.annotated_publishers.get(source_name)
+            if publisher is not None and msg.data:
+                publisher.publish(msg)
         finally:
             gst_buffer.unmap(map_info)
 
@@ -556,7 +568,8 @@ class DeepStreamNode(Node):
         self._bus = None
         self._pipeline = None
         self._pgie = None
-        self._appsink = None
+        self._annotated_appsinks = {}
+        self._latest_source_stamps = {}
         self._publish_status("stopped")
 
     def destroy_node(self):

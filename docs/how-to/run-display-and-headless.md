@@ -43,7 +43,7 @@ GPU workspace 足够时可提高 `pgie_batch_size`。
 - EGL 报错：先检查容器的 GPU 映射，并对无窗口 profile 设置
   `EGL_PLATFORM=surfaceless`；`display:=false` 只关闭可见窗口，不能移除
   native SAHI 对 EGL 的依赖。
-- 无窗口但需要图像消息：使用 `publish_annotated:=true`，并检查 `/deepstream/image/annotated`；该 topic 默认关闭。
+- 无窗口但需要图像消息：使用 `publish_annotated:=true`，并检查 `/deepstream/camera_0/image/annotated/compressed` 等逐路 JPEG topic；该输出默认关闭。
 - 画面 tile 数量不符：确认 `sources` 数量和 `source_names` 数量相同，并检查 `nvmultistreamtiler` 配置。
 
 显示和 CSI 所需的宿主机资源见[运行时要求](../reference/runtime-requirements.md)。
