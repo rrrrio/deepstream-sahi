@@ -125,5 +125,5 @@ publish_detections: true
 `ros2 run deepstream deepstream_node` 时仍采用表中的节点默认值。
 
 [`config/sim_3cam_headless.yaml`](../../config/sim_3cam_headless.yaml) 不创建可见窗口，
-但 native SAHI allocator 仍需要有效的 NVIDIA EGL/X11 资源。该 profile 选择 IOU
+但 native SAHI allocator 仍需要有效的 NVIDIA EGL 资源；无窗口运行可使用 surfaceless EGL。该 profile 选择 IOU
 tracker 与 batch 1；需要 NvDCF 或更高 tensor batch 时使用 GPU workspace 足够的 profile。

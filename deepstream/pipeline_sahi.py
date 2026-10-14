@@ -19,7 +19,6 @@ from .pipeline_common import (  # noqa: E402
     PipelineBuildResult,
     add_output_branches,
     attach_source_to_streammux,
-    configure_cuda_memory_nvvideoconvert,
     configure_primary_gie,
     configure_streammux,
     configure_tiler,
@@ -29,7 +28,6 @@ from .pipeline_common import (  # noqa: E402
     make_element,
     normalize_pipeline_build_params,
     try_make_element,
-    uses_v4l2_cuda_memory,
 )
 
 
@@ -106,7 +104,6 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
         source_bins.append(source_bin)
 
     streammux = make_element("nvstreammux", "streammux")
-    use_cuda_memory = uses_v4l2_cuda_memory(params)
     queue1 = make_element("queue", "queue-preprocess-in")
 
     preprocess = _setup_native_preprocess(params)
@@ -127,8 +124,6 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
     queue_tracker = None
     if params.tracker_enabled:
         tracker_convert = make_element("nvvideoconvert", "tracker-convert")
-        if use_cuda_memory:
-            configure_cuda_memory_nvvideoconvert(tracker_convert)
         tracker_caps = make_element("capsfilter", "tracker-rgba-caps")
         tracker = make_element("nvtracker", "tracker")
         queue_tracker = make_element("queue", "queue-tracker")
@@ -139,8 +134,6 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
         tiler = make_element("nvmultistreamtiler", "tiler")
         queue4 = make_element("queue", "queue-tiler")
         nvvidconv = make_element("nvvideoconvert", "nvvidconv")
-        if use_cuda_memory:
-            configure_cuda_memory_nvvideoconvert(nvvidconv)
         queue5 = make_element("queue", "queue-conv")
         nvosd = make_element("nvdsosd", "nvosd")
         queue6 = make_element("queue", "queue-output")
@@ -217,7 +210,6 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
         upstream=output_upstream,
         display=params.display,
         publish_annotated=params.publish_annotated,
-        use_cuda_memory=use_cuda_memory,
     )
 
     metadata_probe_element = queue_tracker if tracker else post_pgie

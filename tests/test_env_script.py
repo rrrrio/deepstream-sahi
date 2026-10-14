@@ -51,4 +51,5 @@ def test_simulation_launcher_loads_environment_once():
         launcher.count('source "${REPO_ROOT}/.colcon/install/setup.bash"') == 0
     )
     assert 'source "${SCRIPT_DIR}/env.sh"' in launcher
-    assert 'check_runtime.sh" --require-display' in launcher
+    assert 'check_runtime.sh" --require-gpu' in launcher
+    assert 'EGL_PLATFORM="${SIM_EGL_PLATFORM:-surfaceless}"' in launcher

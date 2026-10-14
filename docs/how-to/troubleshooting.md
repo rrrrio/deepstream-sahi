@@ -168,16 +168,15 @@ Recovery。完整经过和恢复证据见[Jetson CSI 配置与启动恢复记录
 
 ## 显示启动失败
 
-先确认 GPU 和 EGL/X11 资源，再用无可见窗口的 profile 分离 OSD sink：
+V4L2 无窗口运行使用 surfaceless EGL，不需要 X11；显示模式才需要 GPU、EGL/X11 和授权。先用无可见窗口的 V4L2 profile 分离 OSD sink：
 
 ```bash
-./scripts/check_runtime.sh --require-display
-ros2 launch deepstream deepstream.launch.py display:=false
+./scripts/check_runtime.sh --require-gpu
+EGL_PLATFORM=surfaceless ros2 launch deepstream deepstream.launch.py \
+  params_file:=config/v4l2_3cam.yaml display:=false
 ```
 
-无窗口模式仍需要 `DISPLAY`、`/tmp/.X11-unix`、EGL 权限和容器显示映射，因为
-native SAHI allocator 使用 EGL-backed surface。显示模式预期为 2x2 tile；没有
-图形会话时不要用 `display:=true` 作为验收命令。
+全 V4L2 无窗口模式使用 surfaceless EGL；文件或混合 source 若使用其他 profile，仍应按容器运行方式检查 EGL/X11 资源。显示模式预期为 2x2 tile；没有图形会话时不要用 `display:=true` 作为验收命令。
 
 ## ROS 检测 topic 不存在
 

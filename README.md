@@ -40,7 +40,7 @@ SAHI 使用固定的 native plugin。缺少 `nvsahipreprocess` 或 `nvsahipostpr
 - Jetson、DeepStream 7.1、CUDA 12.6 和匹配的 NVIDIA runtime。
 - ROS 2 Humble、`vision_msgs` 和 NVIDIA `pyds` 1.2.0。
 - 构建 native plugin 所需的 CUDA、GStreamer 和 TensorRT 开发文件。
-- 文件或 V4L2 输入需要 GPU、EGL/X11 和 `/dev` 映射。
+- 文件输入需要 GPU、EGL/X11 和 `/dev` 映射；无窗口 V4L2 输入使用 surfaceless EGL 和 `/dev` 映射。
 - Argus CSI 额外需要宿主机能枚举 camera module，并把 `/tmp/argus_socket` 映射到容器。
 - 安装脚本需要可写的容器根文件系统和 root；只读容器不能通过提权变成可写。
 
@@ -71,7 +71,7 @@ source .colcon/install/setup.bash
 三路文件无显示运行：
 
 ```bash
-./scripts/check_runtime.sh --require-display
+./scripts/check_runtime.sh --require-gpu
 ./scripts/run_sim_3cam_headless.sh
 ```
 
@@ -115,6 +115,7 @@ ros2 launch deepstream deepstream.launch.py \
 ```
 
 V4L2 profile 按 capture index 0、6、8 对应 `camera_0`、`camera_1`、`camera_2`，使用设备当前的 `UYVY 1920x1080@30`，转换为 `NV12/NVMM` 后进入 `nvstreammux`。稳定路径缺失时启动会明确失败，不会静默回退到 `/dev/videoN`。
+无窗口 V4L2 运行使用 surfaceless EGL，不要求 `DISPLAY`、X11 socket 或 Argus socket；节点会在全 V4L2 且关闭显示和图像发布时自动选择该平台。
 
 ## 验证边界
 

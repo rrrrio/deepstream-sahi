@@ -92,6 +92,22 @@ def validate_v4l2_device(source: str) -> str:
     return path
 
 
+def configure_headless_v4l2_egl(
+    sources: Iterable[str], display: bool, publish_annotated: bool
+) -> bool:
+    """Select surfaceless EGL for headless all-V4L2 DeepStream pipelines."""
+    resolved_sources = list(sources)
+    if (
+        resolved_sources
+        and all(is_v4l2_source(source) for source in resolved_sources)
+        and not display
+        and not publish_annotated
+    ):
+        os.environ["EGL_PLATFORM"] = "surfaceless"
+        return True
+    return False
+
+
 def normalize_source_config(
     source: str,
     sources: Iterable[str],

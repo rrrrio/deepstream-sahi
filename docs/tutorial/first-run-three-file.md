@@ -34,9 +34,9 @@ ros2 pkg prefix deepstream
 ./scripts/run_sim_3cam_headless.sh
 ```
 
-文件 source 使用 `nvurisrcbin`，`file_loop:=true` 使视频结束后继续播放。该脚本会先检查 GPU 和
-NVIDIA X11/EGL 映射，再以 `display:=false` 与 `publish_detections:=true` 启动；headless
-表示不创建可见 OSD 窗口，并不表示可以省略 EGL/X11。GPU/NVDEC 仍是必需条件。
+文件 source 使用 `nvurisrcbin`，`file_loop:=true` 使视频结束后继续播放。该脚本会先检查 GPU，
+以 `display:=false`、surfaceless EGL 和 `publish_detections:=true` 启动；headless
+表示不创建可见 OSD 窗口。GPU/NVDEC 和 EGL 仍是必需条件。
 
 ## 3. 观察结果
 

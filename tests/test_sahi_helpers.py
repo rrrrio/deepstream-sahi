@@ -196,34 +196,6 @@ def test_runtime_preprocess_config_expands_pools_for_all_tensor_batches(
     assert runtime.getint("tensor-buf-pool-size") == 27
 
 
-def test_runtime_preprocess_config_uses_cuda_memory_for_v4l2(tmp_path):
-    from deepstream.config_validator import (
-        prepare_runtime_preprocess_config,
-        read_ini,
-    )
-
-    source_config = tmp_path / "preprocess.txt"
-    source_config.write_text(
-        "[property]\n"
-        "processing-width=640\n"
-        "processing-height=640\n"
-        "tensor-name=images\n"
-        "network-input-shape=1;3;640;640\n",
-        encoding="utf-8",
-    )
-
-    runtime_path = prepare_runtime_preprocess_config(
-        str(source_config),
-        str(tmp_path / "runtime"),
-        batch_size=1,
-        use_cuda_memory=True,
-    )
-    runtime = read_ini(runtime_path)["property"]
-
-    assert runtime.getint("scaling-pool-memory-type") == 2
-    assert runtime.getint("scaling-pool-compute-hw") == 1
-
-
 def test_pipeline_params_retain_legacy_single_source_contract():
     from deepstream.pipeline_common import (
         PipelineBuildParams,
@@ -329,25 +301,6 @@ def test_three_source_streammux_and_tiler_configuration(monkeypatch):
     pipeline_common.attach_source_to_streammux(source, mux, 2)
     assert mux.requested_pads == ["sink_2"]
     assert source.pads["src"].peer is mux.pads["sink_2"]
-
-
-def test_v4l2_streammux_uses_cuda_device_memory():
-    from deepstream import pipeline_common
-
-    params = pipeline_common.PipelineBuildParams(
-        infer_config="/tmp/infer.txt",
-        sources=[
-            "/dev/v4l/by-path/platform-tegra-capture-vi-video-index0",
-            "/dev/v4l/by-path/platform-tegra-capture-vi-video-index6",
-            "/dev/v4l/by-path/platform-tegra-capture-vi-video-index8",
-        ],
-        source_names=["camera_0", "camera_1", "camera_2"],
-    )
-    mux = _FakeElement("streammux", {"nvbuf-memory-type"})
-
-    pipeline_common.configure_streammux(mux, params)
-
-    assert mux.properties["nvbuf-memory-type"] == 2
 
 
 def test_live_source_marks_streammux_live():

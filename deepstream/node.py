@@ -50,6 +50,7 @@ from .pipeline_common import (  # noqa: E402
 from .pipeline_sahi import build_pipeline as build_sahi_pipeline  # noqa: E402
 from .source_utils import (  # noqa: E402
     is_file_source,
+    configure_headless_v4l2_egl,
     is_v4l2_source,
     normalize_source_config,
     validate_v4l2_device,
@@ -157,9 +158,6 @@ class DeepStreamNode(Node):
         tracker_config = resolve_runtime_config_path(tracker_config, share_dir)
 
         preprocess_config = preprocess_config_raw or None
-        use_cuda_memory = bool(self.sources) and all(
-            is_v4l2_source(source) for source in self.sources
-        )
 
         self.tracker_enabled = bool(
             self.get_parameter("tracker_enabled").value
@@ -167,6 +165,11 @@ class DeepStreamNode(Node):
         self.display = bool(self.get_parameter("display").value)
         self.publish_annotated = bool(
             self.get_parameter("publish_annotated").value
+        )
+        configure_headless_v4l2_egl(
+            self.sources,
+            self.display,
+            self.publish_annotated,
         )
         self.publish_detections = bool(
             self.get_parameter("publish_detections").value
@@ -254,7 +257,6 @@ class DeepStreamNode(Node):
                 engine_cache_dir,
                 pgie_batch_size,
                 expected_batch_size,
-                use_cuda_memory=use_cuda_memory,
             )
 
         self.pipeline_params = PipelineBuildParams(

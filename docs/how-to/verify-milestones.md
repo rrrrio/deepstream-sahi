@@ -56,7 +56,7 @@ ros2 pkg prefix deepstream
 
 ## 5. 验证三路文件输入
 
-前置条件：GPU 设备、EGL/X11 资源、模型、parser 和 native SAHI plugin 均存在。
+前置条件：GPU 设备、EGL 资源、模型、parser 和 native SAHI plugin 均存在；显示模式另需 X11。
 
 ```bash
 source scripts/env.sh
@@ -79,12 +79,12 @@ ros2 launch deepstream deepstream.launch.py \
 无显示模式：
 
 ```bash
-./scripts/check_runtime.sh --require-display
-ros2 launch deepstream deepstream.launch.py \
+./scripts/check_runtime.sh --require-gpu
+EGL_PLATFORM=surfaceless ros2 launch deepstream deepstream.launch.py \
   params_file:=config/sim_3cam_headless.yaml display:=false
 ```
 
-显示模式预期为 2x2 tile。无显示模式不创建可见窗口，但仍需要 native SAHI allocator 使用的 EGL/X11 资源。停止后确认没有残留 launch 或 node 进程。
+显示模式预期为 2x2 tile。无显示模式不创建可见窗口，使用 surfaceless EGL 提供 native SAHI allocator 所需的 EGL 资源。停止后确认没有残留 launch 或 node 进程。
 
 ## 7. 验证 ROS 2 topic
 
@@ -135,7 +135,7 @@ for device in \
 done
 ```
 
-V4L2 路径不要求 `/tmp/argus_socket`。如果出现 `Authorization required` 或 `No EGL Display`，先修复 EGL/X11 资源。
+V4L2 路径不要求 `/tmp/argus_socket`。无窗口运行使用 surfaceless EGL；如果出现 `Authorization required` 或 `No EGL Display`，先确认命令设置了 `EGL_PLATFORM=surfaceless`。
 
 ## 10. 逐路验证 V4L2 输入
 
@@ -160,12 +160,12 @@ done
 source /opt/ros/humble/setup.bash
 source scripts/env.sh
 timeout --signal=INT --kill-after=3s 20s \
-  ros2 launch deepstream deepstream.launch.py \
+  EGL_PLATFORM=surfaceless ros2 launch deepstream deepstream.launch.py \
   params_file:=config/v4l2_3cam.yaml \
   display:=false publish_detections:=true publish_annotated:=false
 ```
 
-成功边界是日志出现三个 V4L2 source、native SAHI plugin、streammux/NvTracker 初始化，且没有 source caps、NVMM、input signal 或设备打开错误。
+成功边界是日志出现三个 V4L2 source、native SAHI plugin、streammux/NvTracker 初始化，且没有 source caps、NVMM、input signal 或设备打开错误。该无窗口 V4L2 命令使用 surfaceless EGL，不要求 X11 socket。
 
 ## 12. 验证 ROS 2 输出
 

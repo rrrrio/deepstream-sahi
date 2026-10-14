@@ -111,7 +111,7 @@ HTTPS_PROXY=http://your_proxy:port \
 docker commit ds7-sahi ds7-sahi:environment-snapshot
 ```
 
-当前三相机 V4L2 容器只需要映射 `/dev`、GPU、共享内存和 EGL/X11。只有选择 Argus profile 时，才额外挂载 `/tmp/argus_socket`。从仓库根目录启动一次性 V4L2 容器：
+当前三相机 V4L2 无窗口容器只需要映射 `/dev`、GPU 和共享内存；运行时使用 surfaceless EGL。只有显示模式才需要 EGL/X11 映射，只有选择 Argus profile 时才额外挂载 `/tmp/argus_socket`。从仓库根目录启动一次性 V4L2 容器：
 
 ```bash
 docker run --rm --name deepstream-sahi-v4l2 \
@@ -158,7 +158,7 @@ DISPLAY="$DISPLAY" xhost +SI:localuser:root
 -v "$HOME/.Xauthority:/tmp/.Xauthority:ro"
 ```
 
-`display:=false` 只关闭可见窗口；当前 native SAHI allocator 仍需要 NVIDIA EGL/X11 资源。
+`display:=false` 关闭可见窗口。无窗口全 V4L2 profile 使用 surfaceless EGL，不需要 `DISPLAY` 或 `/tmp/.X11-unix`；节点会自动设置 `EGL_PLATFORM=surfaceless`。手工运行 GStreamer V4L2 探针时，脚本也会使用该平台。
 
 ## 7. 容器内验证顺序
 
@@ -166,7 +166,6 @@ DISPLAY="$DISPLAY" xhost +SI:localuser:root
 
 ```bash
 ./scripts/check_runtime.sh --require-gpu
-./scripts/check_runtime.sh --require-display
 gst-inspect-1.0 v4l2src
 ```
 

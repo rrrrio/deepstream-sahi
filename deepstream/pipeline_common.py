@@ -31,8 +31,6 @@ from .source_utils import (  # noqa: E402
 
 MUXER_BATCH_TIMEOUT_USEC = 40000
 GST_CAPS_FEATURES_NVMM = "memory:NVMM"
-V4L2_COMPUTE_HW_GPU = 1
-V4L2_NVBUF_MEMORY_CUDA_DEVICE = 2
 
 
 @dataclass
@@ -94,27 +92,6 @@ def normalize_pipeline_build_params(
         params.source_names,
     )
     return replace(params, sources=sources, source_names=source_names)
-
-
-def uses_v4l2_cuda_memory(params: PipelineBuildParams) -> bool:
-    """Return whether every active source is a V4L2 camera.
-
-    The Jetson V4L2 path uses CUDA device memory end-to-end so it does not
-    require an EGL display while converting raw camera frames to NVMM.
-    """
-    return bool(params.sources) and all(
-        is_v4l2_source(source) for source in params.sources
-    )
-
-
-def configure_cuda_memory_nvvideoconvert(element: Gst.Element):
-    """Configure a converter for the headless Jetson V4L2 memory path."""
-    if element.find_property("compute-hw") is not None:
-        element.set_property("compute-hw", V4L2_COMPUTE_HW_GPU)
-    if element.find_property("nvbuf-memory-type") is not None:
-        element.set_property(
-            "nvbuf-memory-type", V4L2_NVBUF_MEMORY_CUDA_DEVICE
-        )
 
 
 # ─── SAHI ROI computation ─────────────────────────────────────────────
@@ -239,7 +216,6 @@ def create_v4l2_source_bin(
             f"width={width},height={height},framerate={fps}/1"
         ),
     )
-    configure_cuda_memory_nvvideoconvert(converter)
     capsfilter.set_property(
         "caps", Gst.Caps.from_string("video/x-raw(memory:NVMM),format=NV12")
     )
@@ -461,13 +437,6 @@ def configure_streammux(streammux: Gst.Element, params: PipelineBuildParams):
         streammux.set_property("attach-sys-ts", True)
     if streammux.find_property("sync-inputs") is not None:
         streammux.set_property("sync-inputs", False)
-    if (
-        uses_v4l2_cuda_memory(params)
-        and streammux.find_property("nvbuf-memory-type") is not None
-    ):
-        streammux.set_property(
-            "nvbuf-memory-type", V4L2_NVBUF_MEMORY_CUDA_DEVICE
-        )
 
 
 def configure_primary_gie(
@@ -562,7 +531,6 @@ def add_output_branches(
     upstream: Gst.Element,
     display: bool,
     publish_annotated: bool,
-    use_cuda_memory: bool = False,
 ) -> Optional[Gst.Element]:
     tee = make_element("tee", "tee-output")
     queue_display = make_element("queue", "queue-display")
@@ -598,8 +566,6 @@ def add_output_branches(
     if publish_annotated:
         queue_annotated = make_element("queue", "queue-annotated")
         nvconv_annotated = make_element("nvvideoconvert", "nvconv-annotated")
-        if use_cuda_memory:
-            configure_cuda_memory_nvvideoconvert(nvconv_annotated)
         caps_rgba = make_element("capsfilter", "caps-rgba")
         videoconv = make_element("videoconvert", "videoconv-annotated")
         caps_bgr = make_element("capsfilter", "caps-bgr")

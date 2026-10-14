@@ -41,7 +41,7 @@ ls -l /dev/video* /dev/media*
 
 ## 2. V4L2 容器资源检查
 
-当前 V4L2 容器至少需要 NVIDIA runtime、相机设备、共享内存和显示/EGL 资源。启动容器时保留以下关键参数：
+当前 V4L2 容器至少需要 NVIDIA runtime、相机设备、共享内存和 EGL 资源；显示模式再需要 X11。启动容器时保留以下关键参数：
 
 ```bash
 --runtime nvidia \
@@ -67,7 +67,7 @@ for device in \
 done
 ```
 
-V4L2 路径不要求 `/tmp/argus_socket`。若出现 `Authorization required` 或 `No EGL Display`，先修复 X11 授权和 EGL 资源，再判断相机输入。
+V4L2 路径不要求 `/tmp/argus_socket`。无窗口 V4L2 使用 surfaceless EGL；若出现 `Authorization required` 或 `No EGL Display`，先确认探针或 launch 使用了 `EGL_PLATFORM=surfaceless`，再判断相机输入。
 
 ## 3. 可选的 Argus 验证
 
@@ -128,12 +128,12 @@ V4L2 通过后，使用对应 profile 启动短时管线：
 source /opt/ros/humble/setup.bash
 source scripts/env.sh
 timeout --signal=INT --kill-after=3s 12s \
-  ros2 launch deepstream deepstream.launch.py \
+  EGL_PLATFORM=surfaceless ros2 launch deepstream deepstream.launch.py \
   params_file:=config/v4l2_3cam.yaml \
   display:=false publish_detections:=true publish_annotated:=false
 ```
 
-通过标准是：三个 source 初始化，出现 NVMM/source mux 相关初始化日志，没有 caps、input signal 或设备打开错误，并能看到 `/deepstream/camera_0/1/2/detections`。主动停止产生的 `KeyboardInterrupt`、EOS 或 teardown 日志不代表输入失败。
+通过标准是：三个 source 初始化，出现 NVMM/source mux 相关初始化日志，没有 caps、input signal 或设备打开错误，并能看到 `/deepstream/camera_0/1/2/detections`。无窗口 V4L2 流程使用 surfaceless EGL，不要求 `DISPLAY` 或 X11 socket；主动停止产生的 `KeyboardInterrupt`、EOS 或 teardown 日志不代表输入失败。
 
 Argus profile 只有在 sensor 0、1、2 独立取流通过后才执行：
 

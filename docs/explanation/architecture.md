@@ -45,8 +45,8 @@ source bin 按 source 类型选择取流器：`argus://N` 进入 `nvarguscameras
 ## 显示与 ROS 的分离
 
 显示 sink 是可选末端。`display:=false` 时，管线仍可运行 metadata probe 和 ROS
-publisher，不创建可见窗口；但当前 native SAHI allocator 仍需要 NVIDIA
-EGL/X11 资源。`publish_annotated` 是另一条可选图像输出，默认关闭以避免额外的
+publisher，不创建可见窗口；native SAHI allocator 仍需要 NVIDIA EGL 资源，无窗口
+模式使用 surfaceless EGL，显示模式再增加 X11 资源。`publish_annotated` 是另一条可选图像输出，默认关闭以避免额外的
 appsink 和图像复制。
 
 ## 相关文档

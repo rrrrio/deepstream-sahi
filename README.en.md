@@ -40,7 +40,7 @@ Use the [documentation index](docs/README.md) to choose a tutorial, how-to guide
 - Jetson with DeepStream 7.1, CUDA 12.6, and a matching NVIDIA container runtime.
 - ROS 2 Humble, `vision_msgs`, and NVIDIA `pyds` 1.2.0.
 - CUDA, GStreamer, and TensorRT development packages for the native plugins and parser.
-- GPU, EGL/X11 access, and `/dev` mapping for file or V4L2 input.
+- File input needs GPU, EGL/X11 access, and `/dev`; headless V4L2 input uses surfaceless EGL and `/dev`.
 - For Argus CSI, the host must enumerate the camera modules and the container must mount `/tmp/argus_socket`.
 - The installation scripts require a writable container root filesystem and root access.
 
@@ -71,7 +71,7 @@ See [Install in an existing container](docs/how-to/install-in-existing-container
 Three-file headless profile:
 
 ```bash
-./scripts/check_runtime.sh --require-display
+./scripts/check_runtime.sh --require-gpu
 ./scripts/run_sim_3cam_headless.sh
 ```
 
@@ -115,6 +115,7 @@ ros2 launch deepstream deepstream.launch.py \
 ```
 
 The profile maps capture indexes 0, 6, and 8 to `camera_0`, `camera_1`, and `camera_2`. It uses `UYVY 1920x1080@30` and converts it to `NV12/NVMM` before `nvstreammux`. A missing stable path fails startup instead of silently falling back to `/dev/videoN`.
+Headless V4L2 runs use surfaceless EGL and do not require `DISPLAY`, an X11 socket, or the Argus socket. The node selects this platform automatically when all sources are V4L2 and display/image publishing are disabled.
 
 ## Validation boundary
 

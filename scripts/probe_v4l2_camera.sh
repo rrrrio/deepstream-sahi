@@ -23,7 +23,7 @@ fi
 printf 'DeepStream caps probe (%s frames):\n' "$FRAME_COUNT"
 probe_output=$(mktemp)
 trap 'rm -f "$probe_output"' EXIT
-if ! gst-launch-1.0 -e -v \
+if ! EGL_PLATFORM="${V4L2_EGL_PLATFORM:-surfaceless}" gst-launch-1.0 -e -v \
     nvstreammux name=mux batch-size=1 width=1920 height=1080 \
     live-source=1 batched-push-timeout=40000 ! fakesink sync=false \
     v4l2src device="$DEVICE" io-mode=2 num-buffers="$FRAME_COUNT" ! \

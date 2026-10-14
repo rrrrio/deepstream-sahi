@@ -14,7 +14,7 @@
 
 ## 解说
 
-运行环境由 Jetson 设备、NVIDIA 容器运行时、DeepStream/GStreamer 插件和 ROS 2 工作区组成。当前三相机 V4L2 输入共享 GPU、EGL/X11、`/dev` 设备节点和 native SAHI plugin；Argus CSI 是独立可选路径，额外需要 camera module 枚举和 `/tmp/argus_socket`。
+运行环境由 Jetson 设备、NVIDIA 容器运行时、DeepStream/GStreamer 插件和 ROS 2 工作区组成。当前三相机 V4L2 输入共享 GPU、EGL、`/dev` 设备节点和 native SAHI plugin；无窗口 V4L2 使用 surfaceless EGL，显示模式才需要 X11。Argus CSI 是独立可选路径，额外需要 camera module 枚举和 `/tmp/argus_socket`。
 
 资源检查只能说明依赖存在，不能单独证明相机已经出帧、TensorRT engine 已构建或 ROS 2 topic 正常发布。相机必须继续执行对应的 GStreamer probe；完整检查顺序见[三路管线验证手册](../how-to/verify-milestones.md)。
 
@@ -25,7 +25,7 @@
 ```gherkin
 Feature: 使用非 Argus 输入启动管线
   Background:
-    Given 容器已映射 GPU、设备节点和所需 EGL/X11 资源
+    Given 容器已映射 GPU、设备节点和所需 EGL 资源（显示模式另需 X11）
     And native SAHI plugin 已安装
 
   Scenario: 使用文件或 V4L2 source
@@ -125,7 +125,7 @@ CSI 取流必须同时满足以下条件：
 - 宿主机 `nvargus-daemon` 正常运行，并且 Argus 能枚举相机。
 - 容器使用 NVIDIA runtime，并映射 `/dev` 或所需 NVIDIA 设备节点。
 - 容器挂载宿主机 `/tmp/argus_socket` 到同一路径。
-- 容器具有足够共享内存、EGL/X11 资源和权限。
+- 容器具有足够共享内存、EGL 资源和权限；显示模式另需 X11 资源。
 - `nvarguscamerasrc` 插件存在。
 
 启动容器时至少需要包含：
@@ -175,7 +175,7 @@ done
 UYVY 1920x1080@30 -> v4l2src io-mode=2 -> nvvideoconvert -> NV12/NVMM
 ```
 
-V4L2 路径不需要 `/tmp/argus_socket`，但仍需要 `/dev`、GPU、EGL/X11 和 NVIDIA GStreamer 插件。`v4l2-ctl` 是格式枚举工具，不是容器内 NVMM 取流的必要条件；`scripts/probe_v4l2_camera.sh` 在容器缺少它时会跳过枚举并继续执行 GStreamer 检查。稳定 by-path 缺失时必须失败，不要回退到 `/dev/videoN`。
+V4L2 路径不需要 `/tmp/argus_socket`，但仍需要 `/dev`、GPU、EGL 和 NVIDIA GStreamer 插件。无窗口 V4L2 使用 surfaceless EGL；显示模式才需要 X11。`v4l2-ctl` 是格式枚举工具，不是容器内 NVMM 取流的必要条件；`scripts/probe_v4l2_camera.sh` 在容器缺少它时会跳过枚举并继续执行 GStreamer 检查。稳定 by-path 缺失时必须失败，不要回退到 `/dev/videoN`。
 
 #### 可写根文件系统与环境检查
 

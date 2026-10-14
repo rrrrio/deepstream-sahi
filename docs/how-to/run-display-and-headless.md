@@ -19,30 +19,30 @@ ros2 launch deepstream deepstream.launch.py \
 
 ## 无窗口模式
 
-不需要可见窗口时，关闭显示；native SAHI 仍需要 NVIDIA EGL/X11 资源：
+不需要可见窗口时，关闭显示。文件和全 V4L2 profile 都可以使用 surfaceless EGL：
 
 ```bash
-./scripts/check_runtime.sh --require-display
-ros2 launch deepstream deepstream.launch.py \
+./scripts/check_runtime.sh --require-gpu
+EGL_PLATFORM=surfaceless ros2 launch deepstream deepstream.launch.py \
   params_file:=config/sim_3cam_headless.yaml
 ```
 
 无窗口模式仍应持续处理 source，并可用 `ros2 topic echo` 或 `ros2 topic hz` 检查输出。不要用没有窗口作为检测或 CSI 已通过的证据。
 
-当前 native SAHI allocator 在 Jetson 上使用 EGL-backed surface，因此即使
-`display:=false` 且末端为 `fakesink`，仍需要一个有效的 NVIDIA X11/EGL socket。
-`scripts/run_sim_3cam_headless.sh` 会在启动前检查该 socket，但不会创建 OSD 窗口。
+当前 native SAHI allocator 在 Jetson 上仍使用 EGL-backed surface；surfaceless EGL
+提供该资源而不创建 OSD 窗口。`scripts/run_sim_3cam_headless.sh` 会在启动前检查
+GPU 资源，不需要 X11 socket。
 
 `sim_3cam_headless.yaml` 使用 DeepStream IOU tracker 和 tensor batch 1，以降低
 NvDCF 视觉 surface pool 的显示资源压力并适配受限 GPU workspace；这不会移除
-native SAHI allocator 对 EGL/X11 的要求。生产 CSI/OSD profile 继续使用 NvDCF；
+native SAHI allocator 对 EGL 的要求。生产 CSI/OSD profile 继续使用 NvDCF；
 GPU workspace 足够时可提高 `pgie_batch_size`。
 
 ## 常见切换
 
-- EGL 或 X11 报错：先检查容器的 GPU、X11 socket、`DISPLAY`、`XAUTHORITY`
-  和 EGL 映射；`display:=false` 只关闭可见窗口，不能绕过 native SAHI 的
-  EGL/X11 依赖。
+- EGL 报错：先检查容器的 GPU 映射，并对无窗口 profile 设置
+  `EGL_PLATFORM=surfaceless`；`display:=false` 只关闭可见窗口，不能移除
+  native SAHI 对 EGL 的依赖。
 - 无窗口但需要图像消息：使用 `publish_annotated:=true`，并检查 `/deepstream/image/annotated`；该 topic 默认关闭。
 - 画面 tile 数量不符：确认 `sources` 数量和 `source_names` 数量相同，并检查 `nvmultistreamtiler` 配置。
 
