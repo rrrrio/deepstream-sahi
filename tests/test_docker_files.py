@@ -21,6 +21,9 @@ def test_dockerfile_uses_requested_base_and_does_not_copy_repository_code():
         "ros2-apt-source_${ROS_APT_SOURCE_VERSION}~jammy_all.deb" in dockerfile
     )
     assert "ros.key" not in dockerfile
+    assert "Acquire::http::Timeout=30" in dockerfile
+    assert "Acquire::Retries=3" in dockerfile
+    assert "--max-time 120 --retry 3" in dockerfile
     assert (
         "ARG PYDS_WHEEL_FILE=pyds-1.2.0-cp310-cp310-linux_aarch64.whl"
         in dockerfile

@@ -18,21 +18,21 @@ COPY ${PYDS_WHEEL_FILE} /tmp/pyds.whl
 # headers, ROS 2, or the Jetson Python binding used by deepstream.node.
 RUN set -eux; \
     sed -i '/l4t-repo\.nvidia\.com\/common/d' /etc/apt/sources.list; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
+    apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 update; \
+    apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates curl gnupg; \
     install -d -m 0755 /etc/apt/keyrings; \
-    curl -fsSL https://repo.download.nvidia.com/jetson/jetson-ota-public.asc \
+    curl --connect-timeout 15 --max-time 120 --retry 3 --retry-delay 2 -fsSL https://repo.download.nvidia.com/jetson/jetson-ota-public.asc \
       | gpg --dearmor -o /etc/apt/keyrings/nvidia-jetson.gpg; \
     printf '%s\n' \
       "deb [arch=arm64 signed-by=/etc/apt/keyrings/nvidia-jetson.gpg] https://repo.download.nvidia.com/jetson/common ${L4T_RELEASE} main" \
       > /etc/apt/sources.list.d/nvidia-jetson.list; \
-    curl -fsSL \
+    curl --connect-timeout 15 --max-time 120 --retry 3 --retry-delay 2 -fsSL \
       "http://repo.ros2.org/ubuntu/main/pool/main/r/ros-apt-source/ros2-apt-source_${ROS_APT_SOURCE_VERSION}~jammy_all.deb" \
       -o /tmp/ros2-apt-source.deb; \
     dpkg -i /tmp/ros2-apt-source.deb; \
     rm -f /tmp/ros2-apt-source.deb; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
+    apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 update; \
+    apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 install -y --no-install-recommends \
       build-essential \
       cmake \
       pkg-config \
