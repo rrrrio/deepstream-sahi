@@ -3,13 +3,16 @@ FROM nvcr.io/nvidia/deepstream:7.1-samples-multiarch
 ARG DEBIAN_FRONTEND=noninteractive
 ARG L4T_RELEASE=r36.4
 ARG ROS_DISTRO=humble
-ARG PYDS_WHEEL_URL=https://github.com/NVIDIA-AI-IOT/deepstream_python_apps/releases/download/v1.2.0/pyds-1.2.0-cp310-cp310-linux_aarch64.whl
+ARG ROS_APT_SOURCE_VERSION=1.3.0
+ARG PYDS_WHEEL_FILE=pyds-1.2.0-cp310-cp310-linux_aarch64.whl
 
 ENV DEEPSTREAM_DIR=/opt/nvidia/deepstream/deepstream \
     ROS_DISTRO=${ROS_DISTRO} \
     NVIDIA_DRIVER_CAPABILITIES=all
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+COPY ${PYDS_WHEEL_FILE} /tmp/pyds.whl
 
 # The base image carries the DeepStream runtime but not the project build
 # headers, ROS 2, or the Jetson Python binding used by deepstream.node.
@@ -20,14 +23,14 @@ RUN set -eux; \
     install -d -m 0755 /etc/apt/keyrings; \
     curl -fsSL https://repo.download.nvidia.com/jetson/jetson-ota-public.asc \
       | gpg --dearmor -o /etc/apt/keyrings/nvidia-jetson.gpg; \
-    curl -fsSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
-      | gpg --dearmor -o /etc/apt/keyrings/ros-archive-keyring.gpg; \
     printf '%s\n' \
       "deb [arch=arm64 signed-by=/etc/apt/keyrings/nvidia-jetson.gpg] https://repo.download.nvidia.com/jetson/common ${L4T_RELEASE} main" \
       > /etc/apt/sources.list.d/nvidia-jetson.list; \
-    printf '%s\n' \
-      "deb [arch=arm64 signed-by=/etc/apt/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu jammy main" \
-      > /etc/apt/sources.list.d/ros2.list; \
+    curl -fsSL \
+      "http://repo.ros2.org/ubuntu/main/pool/main/r/ros-apt-source/ros2-apt-source_${ROS_APT_SOURCE_VERSION}~jammy_all.deb" \
+      -o /tmp/ros2-apt-source.deb; \
+    dpkg -i /tmp/ros2-apt-source.deb; \
+    rm -f /tmp/ros2-apt-source.deb; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       build-essential \
@@ -56,10 +59,8 @@ RUN set -eux; \
       ros-${ROS_DISTRO}-ros2launch \
       ros-${ROS_DISTRO}-launch-ros \
       ros-${ROS_DISTRO}-vision-msgs; \
-    python3 -m pip install --no-cache-dir \
-      'numpy<2' \
-      "${PYDS_WHEEL_URL}"; \
-    rm -rf /var/lib/apt/lists/* /root/.cache/pip
+    python3 -m pip install --no-cache-dir 'numpy<2' /tmp/pyds.whl; \
+    rm -rf /var/lib/apt/lists/* /root/.cache/pip /tmp/pyds.whl
 
 COPY deepstream-env.sh /usr/local/bin/deepstream-sahi-env
 RUN chmod 0755 /usr/local/bin/deepstream-sahi-env
