@@ -565,7 +565,10 @@ class DeepStreamNode(Node):
                 self._pipeline.send_event(Gst.Event.new_eos())
             except Exception:
                 pass
-            self._pipeline.set_state(Gst.State.NULL)
+            try:
+                self._pipeline.set_state(Gst.State.NULL)
+            except KeyboardInterrupt:
+                pass
 
         if (
             self._bus_thread is not None
