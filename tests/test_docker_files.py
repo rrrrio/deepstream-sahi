@@ -28,11 +28,9 @@ def test_dockerfile_uses_requested_base_and_does_not_copy_repository_code():
         "ARG PYDS_WHEEL_FILE=pyds-1.2.0-cp310-cp310-linux_aarch64.whl"
         in dockerfile
     )
-    assert "COPY ${PYDS_WHEEL_FILE} /tmp/pyds.whl" in dockerfile
-    assert (
-        "python3 -m pip install --no-cache-dir 'numpy<2' /tmp/pyds.whl"
-        in dockerfile
-    )
+    assert "COPY ${PYDS_WHEEL_FILE} /tmp/${PYDS_WHEEL_FILE}" in dockerfile
+    assert "python3 -m pip install --no-cache-dir --no-deps" in dockerfile
+    assert '"/tmp/${PYDS_WHEEL_FILE}"' in dockerfile
 
     assert (
         REPO_ROOT / "docker" / "pyds-1.2.0-cp310-cp310-linux_aarch64.whl"

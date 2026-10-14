@@ -12,7 +12,7 @@ ENV DEEPSTREAM_DIR=/opt/nvidia/deepstream/deepstream \
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-COPY ${PYDS_WHEEL_FILE} /tmp/pyds.whl
+COPY ${PYDS_WHEEL_FILE} /tmp/${PYDS_WHEEL_FILE}
 
 # The base image carries the DeepStream runtime but not the project build
 # headers, ROS 2, or the Jetson Python binding used by deepstream.node.
@@ -59,8 +59,10 @@ RUN set -eux; \
       ros-${ROS_DISTRO}-ros2launch \
       ros-${ROS_DISTRO}-launch-ros \
       ros-${ROS_DISTRO}-vision-msgs; \
-    python3 -m pip install --no-cache-dir 'numpy<2' /tmp/pyds.whl; \
-    rm -rf /var/lib/apt/lists/* /root/.cache/pip /tmp/pyds.whl
+    python3 -m pip install --no-cache-dir --no-deps \
+      "/tmp/${PYDS_WHEEL_FILE}"; \
+    rm -rf /var/lib/apt/lists/* /root/.cache/pip \
+      "/tmp/${PYDS_WHEEL_FILE}"
 
 COPY deepstream-env.sh /usr/local/bin/deepstream-sahi-env
 RUN chmod 0755 /usr/local/bin/deepstream-sahi-env
