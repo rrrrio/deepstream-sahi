@@ -466,21 +466,11 @@ def test_annotated_output_creates_one_nvjpeg_appsink_per_source(monkeypatch):
     }
 
     demux = elements["annotated-demux"]
-    callback, branches = demux.callbacks["pad-added"]
-    callback(
-        demux,
-        types.SimpleNamespace(
-            get_name=lambda: "src_1",
-            link=lambda pad: setattr(
-                elements["queue-annotated-camera_1"].pads["sink"],
-                "peer",
-                pad,
-            )
-            or 0,
-        ),
-        branches,
+    assert demux.requested_pads == ["src_0", "src_1"]
+    assert (
+        demux.pads["src_1"].peer
+        is elements["queue-annotated-camera_1"].pads["sink"]
     )
-    assert elements["queue-annotated-camera_1"].pads["sink"].peer is not None
 
 
 def test_tracker_tensor_meta_is_configured_only_when_requested(tmp_path):

@@ -637,7 +637,6 @@ def add_output_branches(
             demux,
         )
 
-        demux_branches = {}
         for source_index, source_name in enumerate(source_names):
             queue_source = make_element(
                 "queue", f"queue-annotated-{source_name}"
@@ -686,26 +685,17 @@ def add_output_branches(
                 caps_jpeg,
                 appsink,
             )
-            demux_branches[source_index] = queue_source
             annotated_appsinks[source_name] = appsink
-
-        def on_demux_pad(_demux, pad, branches):
-            try:
-                source_index = int(pad.get_name().rsplit("_", 1)[1])
-            except (AttributeError, IndexError, ValueError):
-                return
-            queue_source = branches.get(source_index)
-            if queue_source is None:
-                return
             sink_pad = queue_source.get_static_pad("sink")
-            if sink_pad is None or sink_pad.is_linked():
-                return
-            if pad.link(sink_pad) != Gst.PadLinkReturn.OK:
+            source_pad = demux.request_pad_simple(f"src_{source_index}")
+            if source_pad is None or sink_pad is None:
+                raise RuntimeError(
+                    f"Unable to request annotated demux source {source_index}"
+                )
+            if source_pad.link(sink_pad) != Gst.PadLinkReturn.OK:
                 raise RuntimeError(
                     f"Unable to link annotated demux source {source_index}"
                 )
-
-        demux.connect("pad-added", on_demux_pad, demux_branches)
 
     return annotated_appsinks
 
