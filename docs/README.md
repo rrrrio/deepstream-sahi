@@ -31,7 +31,7 @@
 
 ## 推荐阅读顺序
 
-首次运行时，先完成[在现有容器中安装](how-to/install-in-existing-container.md)，再阅读[首次运行三路文件](tutorial/first-run-three-file.md)。需要相机时，按[验证 CSI 相机输入](how-to/verify-csi-camera-input.md)的顺序检查宿主机和容器，再执行[从文件切换到 CSI](how-to/switch-file-to-csi.md)。
+首次运行时，先按[在现有容器中安装](how-to/install-in-existing-container.md)中的环境镜像流程构建并启动容器，再阅读[首次运行三路文件](tutorial/first-run-three-file.md)。需要相机时，按[验证 CSI 相机输入](how-to/verify-csi-camera-input.md)的顺序检查宿主机和容器，再执行[从文件切换到 CSI](how-to/switch-file-to-csi.md)。
 
 CSI 前置验证只确认相机数据能到达 `deepstream.launch.py` 所需的输入边界，不把真实推理、检测内容、ROS 话题或长时间稳定性作为相机前置条件。Argus 尚未可用时，可用 `config/v4l2_3cam.yaml` 验证 V4L2 到 NVMM/nvstreammux 的输入边界；该结果不等价于 Argus CSI 通过。
 

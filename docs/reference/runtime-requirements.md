@@ -18,6 +18,25 @@
 
 资源检查只能说明依赖存在，不能单独证明相机已经出帧、TensorRT engine 已构建或 ROS 2 topic 正常发布。相机必须继续执行对应的 GStreamer probe；完整检查顺序见[三路管线验证手册](../how-to/verify-milestones.md)。
 
+## 环境镜像
+
+仓库的 `docker/Dockerfile` 基于 `nvcr.io/nvidia/deepstream:7.1-samples-multiarch`，
+只构建系统环境，不复制 checkout 内容。`docker/run_docker.sh` 把本机 checkout 挂载到
+`/workspace/deepstream-sahi`，因此 `.local`、`.colcon`、模型和验证报告都属于当前
+checkout，而不是镜像层。
+
+镜像包含以下构建环境：
+
+- CUDA 12.6 runtime/CRT 开发文件和 Jetson `r36.4` 软件源。
+- TensorRT、GStreamer、Python 3.10、ONNX、pytest 和 colcon 开发依赖。
+- ROS 2 Humble、`vision_msgs`、`ros2 launch` 和 `pyds` 1.2.0。
+- 与镜像目标架构匹配的本地 `pyds` wheel，避免构建阶段依赖 GitHub 下载。
+
+默认启动参数适合无窗口 V4L2：`--runtime nvidia`、`--privileged`、`--ipc=host`、
+`--network=host`、`-v /dev:/dev` 和 `EGL_PLATFORM=surfaceless`。X11 模式需要显式
+设置 `EGL_PLATFORM=x11`、`DISPLAY_VALUE` 和 X11 socket；Argus 模式还需要显式设置
+`MOUNT_ARGUS_SOCKET=1`。V4L2 三相机验收不要求 Argus socket。
+
 ## 参考场景
 
 ### 文件或 V4L2 输入
@@ -221,4 +240,6 @@ runtime:
 | `cuda` | string / `12.6` | CUDA runtime、开发头文件和 TensorRT 构建环境必须匹配。 |
 | `ros` | string / `humble` | 需要 ROS 2 Humble、`vision_msgs` 和可用的 Python 绑定。 |
 | `argus_socket` | path / `/tmp/argus_socket` | Argus CSI 必须映射宿主机 socket；V4L2 和文件输入不要求该路径。 |
+| `image` | string / `deepstream-sahi:7.1-env` | 推荐的环境镜像标签；镜像不包含仓库源码和运行产物。 |
+| `egl_platform` | string / `surfaceless` | 无窗口 V4L2 使用 `surfaceless`；可见 OSD 使用 `x11`。 |
 | `writable_root` | bool / `true` | 安装依赖和构建产物需要可写的仓库与容器根文件系统。 |

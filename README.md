@@ -29,6 +29,7 @@ SAHI 使用固定的 native plugin。缺少 `nvsahipreprocess` 或 `nvsahipostpr
 - `config/csi_3cam.yaml`：三路 Argus CSI profile。
 - `config/v4l2_3cam.yaml`：当前三相机 V4L2 profile，使用稳定的 `/dev/v4l/by-path` 链接和 `UYVY 1920x1080@30`。
 - `scripts/`：容器安装、运行时检查、相机输入 probe 和环境脚本。
+- `docker/`：DeepStream 7.1 环境镜像和本机 checkout 挂载启动脚本。
 - `docs/`：教程、操作指南、参考、架构说明和相机输入排障流程。
 
 ## 文档
@@ -46,7 +47,14 @@ SAHI 使用固定的 native plugin。缺少 `nvsahipreprocess` 或 `nvsahipostpr
 
 ## 安装和构建
 
-在容器内从仓库根目录执行：
+推荐先从 checkout 根目录构建并启动环境镜像：
+
+```bash
+docker build --network=host -f docker/Dockerfile -t deepstream-sahi:7.1-env docker
+EGL_PLATFORM=surfaceless ./docker/run_docker.sh
+```
+
+进入容器后，从仓库根目录执行：
 
 ```bash
 ./scripts/capture_environment.sh

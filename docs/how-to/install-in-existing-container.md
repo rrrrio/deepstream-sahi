@@ -2,6 +2,61 @@
 
 本指南在 Jetson 上的 DeepStream 7.1 容器中安装仓库依赖，并把项目产物保存在仓库目录。它不把仓库插件安装到 `/opt`，也不修改宿主机内核或设备树。
 
+## 推荐：构建并启动环境镜像
+
+仓库提供的镜像只包含 DeepStream、CUDA/TensorRT 开发文件、ROS 2、GStreamer 和
+`pyds` 等系统环境，不复制项目源码，也不把模型、插件或 ROS 2 构建产物写入镜像。
+源码通过启动脚本挂载到 `/workspace/deepstream-sahi`，因此容器退出后项目产物仍在当前
+checkout 中。
+
+从 checkout 根目录构建镜像：
+
+```bash
+docker build --network=host \
+  -f docker/Dockerfile \
+  -t deepstream-sahi:7.1-env \
+  docker
+```
+
+构建上下文是 `docker/`，其中包含与 DeepStream 7.1、Python 3.10 和 Jetson
+aarch64 匹配的 `pyds` wheel。镜像构建应在目标 Jetson 或等价的 aarch64 构建环境中
+执行。`--network=host` 用于绕过部分 Jetson 主机上 Docker bridge 的 iptables raw
+表不可用问题；它不会修改宿主机的防火墙或启动配置。
+
+无窗口三路 V4L2 验证使用 surfaceless EGL：
+
+```bash
+EGL_PLATFORM=surfaceless ./docker/run_docker.sh
+```
+
+需要 OSD 窗口时，使用实际的本机 X display，并显式选择 X11 EGL：
+
+```bash
+DISPLAY_VALUE=:0 EGL_PLATFORM=x11 ./docker/run_docker.sh
+```
+
+将 `:0` 替换为本机实际的 display。启动脚本默认映射 NVIDIA runtime、`/dev`、共享
+内存、host network 和 checkout；V4L2 profile 不需要 `/tmp/argus_socket`。只有验证
+Argus CSI 时才增加：
+
+```bash
+MOUNT_ARGUS_SOCKET=1 EGL_PLATFORM=surfaceless ./docker/run_docker.sh
+```
+
+进入容器后，先执行本指南第 3 节的插件构建和第 4 节的 ROS 2 构建，再执行：
+
+```bash
+./scripts/check_runtime.sh --require-gpu
+for device in \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index0 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index6 \
+  /dev/v4l/by-path/platform-tegra-capture-vi-video-index8; do
+  ./scripts/probe_v4l2_camera.sh "$device" 10
+done
+```
+
+如果只需要复用已经创建的容器，可跳过本节，继续使用下面的手工安装流程。
+
 ## 1. 记录初始状态
 
 在容器内从仓库根目录执行：
@@ -103,15 +158,15 @@ HTTPS_PROXY=http://your_proxy:port \
 
 下载脚本会校验 SHA256。解析器构建需要 `libnvinfer-dev` 和 `libnvonnxparsers-dev`。如果模型或 parser 不存在，先修复资源，再运行相机输入验证。
 
-## 6. 创建正确的 Docker CSI 运行环境
+## 6. 在已有容器中确认运行时映射
 
-先保存当前容器，保留回滚点：
+如果没有使用仓库启动脚本，而是从已有容器继续验证，先保存当前容器，保留回滚点：
 
 ```bash
 docker commit ds7-sahi ds7-sahi:environment-snapshot
 ```
 
-当前三相机 V4L2 无窗口容器只需要映射 `/dev`、GPU 和共享内存；运行时使用 surfaceless EGL。只有显示模式才需要 EGL/X11 映射，只有选择 Argus profile 时才额外挂载 `/tmp/argus_socket`。从仓库根目录启动一次性 V4L2 容器：
+当前三相机 V4L2 无窗口容器只需要映射 `/dev`、GPU 和共享内存；运行时使用 surfaceless EGL。只有显示模式才需要 EGL/X11 映射，只有选择 Argus profile 时才额外挂载 `/tmp/argus_socket`。从 checkout 根目录启动一次性 V4L2 容器：
 
 ```bash
 docker run --rm --name deepstream-sahi-v4l2 \

@@ -29,6 +29,7 @@ The SAHI profile requires the pinned native plugins. It fails clearly when `nvsa
 - `config/csi_3cam.yaml`: three Argus CSI sources.
 - `config/v4l2_3cam.yaml`: the current three-camera V4L2 profile using stable `/dev/v4l/by-path` links and `UYVY 1920x1080@30`.
 - `scripts/`: container setup, runtime checks, camera probes, and environment helpers.
+- `docker/`: the DeepStream 7.1 environment image and checkout-mounting launcher.
 - `docs/`: tutorials, how-to guides, references, architecture, and camera-input troubleshooting.
 
 ## Documentation
@@ -46,7 +47,14 @@ Use the [documentation index](docs/README.md) to choose a tutorial, how-to guide
 
 ## Install and build
 
-Run from the repository root inside the container:
+Build and start the environment image from the checkout root first:
+
+```bash
+docker build --network=host -f docker/Dockerfile -t deepstream-sahi:7.1-env docker
+EGL_PLATFORM=surfaceless ./docker/run_docker.sh
+```
+
+Then run the project setup from the repository root inside the container:
 
 ```bash
 ./scripts/capture_environment.sh
