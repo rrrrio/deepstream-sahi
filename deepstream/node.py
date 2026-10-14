@@ -472,7 +472,7 @@ class DeepStreamNode(Node):
             detections = extract_detections(frame_meta)
 
             publisher = self.detection_publishers.get(source_name)
-            if publisher is not None:
+            if publisher is not None and self._running and rclpy.ok():
                 det_msg = build_detection_array_msg(
                     detections, stamp, source_name
                 )
@@ -504,7 +504,12 @@ class DeepStreamNode(Node):
             msg.format = "jpeg"
             msg.data = bytes(map_info.data)
             publisher = self.annotated_publishers.get(source_name)
-            if publisher is not None and msg.data:
+            if (
+                publisher is not None
+                and msg.data
+                and self._running
+                and rclpy.ok()
+            ):
                 publisher.publish(msg)
         finally:
             gst_buffer.unmap(map_info)
