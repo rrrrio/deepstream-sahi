@@ -157,6 +157,9 @@ class DeepStreamNode(Node):
         tracker_config = resolve_runtime_config_path(tracker_config, share_dir)
 
         preprocess_config = preprocess_config_raw or None
+        use_cuda_memory = bool(self.sources) and all(
+            is_v4l2_source(source) for source in self.sources
+        )
 
         self.tracker_enabled = bool(
             self.get_parameter("tracker_enabled").value
@@ -251,6 +254,7 @@ class DeepStreamNode(Node):
                 engine_cache_dir,
                 pgie_batch_size,
                 expected_batch_size,
+                use_cuda_memory=use_cuda_memory,
             )
 
         self.pipeline_params = PipelineBuildParams(

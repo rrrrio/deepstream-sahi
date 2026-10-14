@@ -177,6 +177,7 @@ def prepare_runtime_preprocess_config(
     config_cache_dir: str,
     batch_size: int,
     total_roi_count: int = 0,
+    use_cuda_memory: bool = False,
 ) -> str:
     """Write a native SAHI config whose tensor batch matches the active sources."""
     if batch_size <= 0:
@@ -199,6 +200,10 @@ def prepare_runtime_preprocess_config(
         for key in ("scaling-buf-pool-size", "tensor-buf-pool-size"):
             configured = prop.getint(key, fallback=0)
             prop[key] = str(max(configured, required_batches))
+
+    if use_cuda_memory:
+        prop["scaling-pool-memory-type"] = "2"
+        prop["scaling-pool-compute-hw"] = "1"
 
     custom_lib = prop.get("custom-lib-path", fallback="").strip()
     if custom_lib:
