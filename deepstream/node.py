@@ -14,6 +14,7 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from builtin_interfaces.msg import Time
 from rclpy.executors import ExternalShutdownException
+from rclpy.exceptions import ParameterUninitializedException
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from sensor_msgs.msg import CompressedImage
@@ -92,7 +93,9 @@ class DeepStreamNode(Node):
         self.declare_parameter("display", True)
         self.declare_parameter("publish_annotated", False)
         self.declare_parameter("publish_detections", False)
-        self.declare_parameter("allowed_class_ids", [])
+        self.declare_parameter(
+            "allowed_class_ids", Parameter.Type.INTEGER_ARRAY
+        )
         self.declare_parameter("merge_enabled", True)
         self.declare_parameter("merge_metric", "ios")
         self.declare_parameter("merge_threshold", 0.5)
@@ -176,8 +179,12 @@ class DeepStreamNode(Node):
         self.publish_detections = bool(
             self.get_parameter("publish_detections").value
         )
+        try:
+            allowed_class_ids = self.get_parameter("allowed_class_ids").value
+        except ParameterUninitializedException:
+            allowed_class_ids = []
         self.allowed_class_ids = normalize_allowed_class_ids(
-            self.get_parameter("allowed_class_ids").value or []
+            allowed_class_ids or []
         )
         merge_enabled = bool(self.get_parameter("merge_enabled").value)
         merge_metric = (
