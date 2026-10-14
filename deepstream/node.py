@@ -92,9 +92,7 @@ class DeepStreamNode(Node):
         self.declare_parameter("display", True)
         self.declare_parameter("publish_annotated", False)
         self.declare_parameter("publish_detections", False)
-        self.declare_parameter(
-            "allowed_class_ids", Parameter.Type.INTEGER_ARRAY
-        )
+        self.declare_parameter("allowed_class_ids", [])
         self.declare_parameter("merge_enabled", True)
         self.declare_parameter("merge_metric", "ios")
         self.declare_parameter("merge_threshold", 0.5)
