@@ -38,7 +38,11 @@ std_msgs.msg = std_msgs_msg
 sys.modules.setdefault("std_msgs", std_msgs)
 sys.modules.setdefault("std_msgs.msg", std_msgs_msg)
 
-from deepstream.pipeline_common import compute_sahi_rois  # noqa: E402
+from deepstream.pipeline_common import (  # noqa: E402
+    compute_sahi_rois,
+    parse_sahi_rois,
+    serialize_sahi_rois,
+)
 from deepstream.pipeline_common import compute_tiler_layout  # noqa: E402
 
 
@@ -60,6 +64,86 @@ def test_1080p_yolov11s_profile_produces_nine_rois():
     assert all(
         width == 640 and height == 640 for _, _, width, height in rois[:-1]
     )
+
+
+def test_explicit_rois_produce_three_middle_tiles_and_full_frame():
+    rois = compute_sahi_rois(
+        1920,
+        1080,
+        640,
+        640,
+        0.0,
+        0.0,
+        [
+            (0, 220, 640, 640),
+            (640, 220, 640, 640),
+            (1280, 220, 640, 640),
+        ],
+        True,
+    )
+
+    assert rois == [
+        (0, 220, 640, 640),
+        (640, 220, 640, 640),
+        (1280, 220, 640, 640),
+        (0, 0, 1920, 1080),
+    ]
+    assert (
+        compute_sahi_rois(
+            1920,
+            1080,
+            640,
+            640,
+            0.0,
+            0.0,
+            rois[:3],
+            False,
+        )
+        == rois[:3]
+    )
+    assert compute_sahi_rois(
+        1920,
+        1080,
+        640,
+        640,
+        0.0,
+        0.0,
+        [(0, 0, 1920, 1080)],
+        True,
+    ) == [(0, 0, 1920, 1080)]
+
+
+def test_explicit_roi_string_is_parsed_and_serialized_for_native_plugin():
+    rois = parse_sahi_rois(
+        "[[0,220,640,640], [640,220,640,640], [1280,220,640,640]]",
+        1920,
+        1080,
+    )
+
+    assert rois == [
+        (0, 220, 640, 640),
+        (640, 220, 640, 640),
+        (1280, 220, 640, 640),
+    ]
+    assert serialize_sahi_rois(rois) == (
+        "0,220,640,640;640,220,640,640;1280,220,640,640"
+    )
+    assert parse_sahi_rois("[]", 1920, 1080) == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "[[0,220,640]]",
+        "[[-1,0,640,640]]",
+        "[[0,0,0,640]]",
+        "[[1400,0,640,640]]",
+        "[[0,0,640,640], [0,0,640,640]]",
+    ],
+)
+def test_explicit_roi_validation_rejects_invalid_values(value):
+    with pytest.raises(ValueError):
+        parse_sahi_rois(value, 1920, 1080)
 
 
 def test_sahi_rois_have_expected_overlap_and_stay_in_frame():
@@ -505,6 +589,7 @@ def test_native_sahi_plugin_properties_and_metric_validation(monkeypatch):
         "slice-height",
         "overlap-width-ratio",
         "overlap-height-ratio",
+        "roi-list",
         "enable-full-frame",
     }
     required_postprocess = {
@@ -531,6 +616,8 @@ def test_native_sahi_plugin_properties_and_metric_validation(monkeypatch):
         slice_height=640,
         overlap_h=0.2,
         overlap_v=0.3,
+        rois=[(0, 220, 640, 640), (640, 220, 640, 640)],
+        include_full_frame=False,
         merge_config=MergeConfig(True, "ios", 0.7, True),
     )
 
@@ -541,7 +628,8 @@ def test_native_sahi_plugin_properties_and_metric_validation(monkeypatch):
         "slice-height": 640,
         "overlap-width-ratio": 0.2,
         "overlap-height-ratio": 0.3,
-        "enable-full-frame": True,
+        "roi-list": "0,220,640,640;640,220,640,640",
+        "enable-full-frame": False,
     }
     assert pipeline_sahi._setup_native_postprocess(params) is postprocess
     assert postprocess.properties == {

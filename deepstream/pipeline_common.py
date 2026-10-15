@@ -6,12 +6,13 @@ Author: Yuhao Ding
 """
 
 import configparser
+import json
 import os
 import math
 import pathlib
 import sys
 from dataclasses import dataclass, field, replace
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 from urllib.parse import unquote, urlparse
 
 import gi
@@ -69,6 +70,8 @@ class PipelineBuildParams:
     slice_height: int = 640
     overlap_h: float = 0.2
     overlap_v: float = 0.2
+    rois: List[Tuple[int, int, int, int]] = field(default_factory=list)
+    include_full_frame: bool = True
 
     # Merge config for nvsahipostprocess plugin
     merge_config: Optional[MergeConfig] = None
@@ -99,6 +102,83 @@ def normalize_pipeline_build_params(
 # ─── SAHI ROI computation ─────────────────────────────────────────────
 
 
+def validate_sahi_rois(
+    rois: object,
+    frame_w: int,
+    frame_h: int,
+) -> List[Tuple[int, int, int, int]]:
+    """Validate and normalize explicit ``[left, top, width, height]`` ROIs."""
+    if rois is None:
+        return []
+    if not isinstance(rois, (list, tuple)):
+        raise ValueError("rois must be a list of [left, top, width, height]")
+
+    normalized = []
+    seen = set()
+    for index, roi in enumerate(rois):
+        if not isinstance(roi, (list, tuple)) or len(roi) != 4:
+            raise ValueError(
+                f"rois[{index}] must contain exactly four integers: "
+                "[left, top, width, height]"
+            )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in roi
+        ):
+            raise ValueError(f"rois[{index}] must contain only integers")
+
+        left, top, width, height = roi
+        if left < 0 or top < 0 or width <= 0 or height <= 0:
+            raise ValueError(
+                f"rois[{index}] must have non-negative origin and positive size"
+            )
+        if left + width > frame_w or top + height > frame_h:
+            raise ValueError(
+                f"rois[{index}] must stay within the {frame_w}x{frame_h} frame"
+            )
+
+        normalized_roi = (left, top, width, height)
+        if normalized_roi in seen:
+            raise ValueError(f"rois[{index}] duplicates an earlier ROI")
+        seen.add(normalized_roi)
+        normalized.append(normalized_roi)
+    return normalized
+
+
+def parse_sahi_rois(
+    value: object,
+    frame_w: int,
+    frame_h: int,
+) -> List[Tuple[int, int, int, int]]:
+    """Parse the ROS string parameter containing a JSON-style ROI list.
+
+    ROS 2 parameters do not support nested primitive arrays, so the user-facing
+    value is a string such as ``"[[0,220,640,640], [640,220,640,640]]"``.
+    An empty string or ``"[]"`` selects the automatic grid.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "rois must be a JSON-style list, for example "
+                "[[0,220,640,640], [640,220,640,640]]"
+            ) from exc
+    return validate_sahi_rois(value, frame_w, frame_h)
+
+
+def serialize_sahi_rois(
+    rois: Sequence[Tuple[int, int, int, int]],
+) -> str:
+    """Serialize validated ROIs for the native GStreamer property."""
+    return ";".join(",".join(str(value) for value in roi) for roi in rois)
+
+
 def compute_sahi_rois(
     frame_w: int,
     frame_h: int,
@@ -106,12 +186,21 @@ def compute_sahi_rois(
     slice_h: int,
     overlap_h: float = 0.2,
     overlap_v: float = 0.2,
+    rois: Optional[Sequence[Tuple[int, int, int, int]]] = None,
+    include_full_frame: bool = True,
 ) -> List[Tuple[int, int, int, int]]:
-    """Compute SAHI ROI grid as list of (left, top, width, height).
+    """Compute explicit or automatic SAHI ROIs.
 
     Uses stride = slice_size - int(slice_size * overlap) to match
-    nvdspreprocess convention. The last ROI is always the full frame.
+    nvdspreprocess convention. A non-empty explicit ROI list bypasses this
+    automatic grid and is reused for every source.
     """
+    if rois:
+        normalized = validate_sahi_rois(rois, frame_w, frame_h)
+        if include_full_frame and (0, 0, frame_w, frame_h) not in normalized:
+            normalized.append((0, 0, frame_w, frame_h))
+        return normalized
+
     stride_x = max(1, slice_w - int(slice_w * overlap_h))
     stride_y = max(1, slice_h - int(slice_h * overlap_v))
 
@@ -125,9 +214,11 @@ def compute_sahi_rois(
     if edge_y >= 0 and (not ys or ys[-1] != edge_y):
         ys.append(edge_y)
 
-    rois = [(x, y, slice_w, slice_h) for y in ys for x in xs]
-    rois.append((0, 0, frame_w, frame_h))
-    return rois
+    computed_rois = [(x, y, slice_w, slice_h) for y in ys for x in xs]
+
+    if include_full_frame:
+        computed_rois.append((0, 0, frame_w, frame_h))
+    return computed_rois
 
 
 # ─── element helpers ──────────────────────────────────────────────────

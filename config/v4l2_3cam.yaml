@@ -15,6 +15,8 @@ deepstream_node:
     slice_height: 640
     overlap_h: 0.2
     overlap_v: 0.2
+    rois: "[[0,220,640,640], [640,220,640,640], [1280,220,640,640]]"
+    include_full_frame: true
     pgie_batch_size: 1
     det_interval: 2
     merge_enabled: true

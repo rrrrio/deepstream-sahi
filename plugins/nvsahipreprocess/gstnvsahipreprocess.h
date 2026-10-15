@@ -32,8 +32,10 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include "gst-nvquery.h"
 #include "gstnvsahipreprocess_allocator.h"
@@ -72,6 +74,10 @@ struct NvSahiPreProcessCustomBufImpl : public NvDsPreProcessCustomBuf {
   GstNvSahiPreProcessMemory *memory;
 };
 
+struct SliceBBox {
+  guint left, top, width, height;
+};
+
 class NvSahiPreProcessAcquirerImpl : public NvDsPreProcessAcquirer {
  public:
   NvSahiPreProcessAcquirerImpl(GstBufferPool *pool);
@@ -90,6 +96,7 @@ struct _GstNvSahiPreProcess {
   guint slice_height;
   gfloat overlap_width_ratio;
   gfloat overlap_height_ratio;
+  std::vector<SliceBBox> explicit_rois;
   gboolean enable_full_frame;
 
   /* ── Target GIE IDs ────────────────────────────────────────────────────── */

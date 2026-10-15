@@ -195,9 +195,9 @@ ros2 interface show vision_msgs/msg/Detection2DArray
 
 ## 性能或 batch 异常
 
-默认 1920x1080、640x640、0.2 overlap 产生每路 9 个 ROI。多路时总 ROI 为 `source_count * roi_count`；`pgie_batch_size` 必须整除总 ROI，允许插件将一帧拆成多个 tensor batch。检查运行日志、nvinfer batch 属性和 preprocess plugin 属性，不要仅根据 FPS 判断 batch 正确。
+`rois` 非空时，1920x1080 profile 的三路共用 3 个横向 640x640 ROI；`include_full_frame: true` 再为每路加入 1 个全图 ROI，因此每路 4 个、三路总计 12 个 ROI。`rois: "[]"` 或空字符串时，1920x1080、640x640、0.2 overlap 的默认网格每路产生 9 个局部 ROI，再按 `include_full_frame` 决定是否加入全图。多路时总 ROI 为 `source_count * roi_count`；`pgie_batch_size` 必须整除总 ROI，允许插件将一帧拆成多个 tensor batch。检查运行日志、nvinfer batch 属性和 preprocess plugin 属性，不要仅根据 FPS 判断 batch 正确。
 
-当 `pgie_batch_size=1` 时，三路默认 profile 会把一个 mux buffer 拆成 27 个
+当 `pgie_batch_size=1` 时，三路当前 profile 会把一个 mux buffer 拆成 12 个
 SAHI tensor batch。`scaling-buf-pool-size` 和 `tensor-buf-pool-size` 必须至少能
 容纳这些 batch；默认 YOLOv11s 配置使用 32。池只有 6 时，native preprocessor
 会在第 7 个 ROI 等待 buffer，ROS topic 会被创建但没有消息。

@@ -11,7 +11,7 @@ from deepstream.config_validator import (
     validate_preprocess_config,
     validate_sahi_batch,
 )
-from deepstream.pipeline_common import compute_sahi_rois
+from deepstream.pipeline_common import compute_sahi_rois, parse_sahi_rois
 from deepstream.source_utils import (
     is_argus_source,
     is_file_source,
@@ -57,12 +57,18 @@ def test_three_camera_profiles_keep_the_sahi_batch_contract(
             profile["slice_height"],
             profile["overlap_h"],
             profile["overlap_v"],
+            parse_sahi_rois(
+                profile.get("rois", ""),
+                profile["width"],
+                profile["height"],
+            ),
+            profile.get("include_full_frame", True),
         )
     )
 
     assert profile["mode"] == "sahi"
     assert len(sources) == len(names) == 3
-    expected_roi_count = 7 if profile_name == "sim_3cam_traffic.yaml" else 9
+    expected_roi_count = 7 if profile_name == "sim_3cam_traffic.yaml" else 4
     assert roi_count == expected_roi_count
     assert (len(sources) * roi_count) % profile["pgie_batch_size"] == 0
     assert (

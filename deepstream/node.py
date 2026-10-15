@@ -48,6 +48,7 @@ from .pipeline_common import (  # noqa: E402
     MergeConfig,
     PipelineBuildParams,
     compute_sahi_rois,
+    parse_sahi_rois,
 )
 from .pipeline_sahi import build_pipeline as build_sahi_pipeline  # noqa: E402
 from .source_utils import (  # noqa: E402
@@ -110,6 +111,8 @@ class DeepStreamNode(Node):
         self.declare_parameter("slice_height", 640)
         self.declare_parameter("overlap_h", 0.2)
         self.declare_parameter("overlap_v", 0.2)
+        self.declare_parameter("rois", "")
+        self.declare_parameter("include_full_frame", True)
 
     def _resolve_runtime_config(self):
         self.mode = str(self.get_parameter("mode").value).strip().lower()
@@ -210,6 +213,14 @@ class DeepStreamNode(Node):
         overlap_v = float(self.get_parameter("overlap_v").value)
         width = int(self.get_parameter("width").value)
         height = int(self.get_parameter("height").value)
+        rois = parse_sahi_rois(
+            self.get_parameter("rois").value,
+            width,
+            height,
+        )
+        include_full_frame = bool(
+            self.get_parameter("include_full_frame").value
+        )
         if slice_width <= 0 or slice_height <= 0:
             raise ValueError("slice dimensions must be positive")
         if slice_width > width or slice_height > height:
@@ -232,6 +243,8 @@ class DeepStreamNode(Node):
                     slice_height,
                     overlap_h,
                     overlap_v,
+                    rois,
+                    include_full_frame,
                 )
             )
             expected_batch_size = len(self.sources) * roi_count
@@ -299,6 +312,8 @@ class DeepStreamNode(Node):
             slice_height=slice_height,
             overlap_h=overlap_h,
             overlap_v=overlap_v,
+            rois=rois,
+            include_full_frame=include_full_frame,
             merge_config=self._merge_cfg,
         )
 

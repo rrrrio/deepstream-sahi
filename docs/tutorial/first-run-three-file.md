@@ -69,7 +69,7 @@ ros2 topic echo --once /deepstream/camera_0/detections
 
 ## 4. 检查 SAHI 结果
 
-在默认 1920x1080 输入、`slice_width:=640`、`slice_height:=640`、水平和垂直重叠均为 `0.2` 时，每路包含 9 个 ROI，其中一个是全图 ROI。三路输入因此为 27 个 YOLOv11s ROI；headless profile 使用 tensor batch 1 分段处理。实际 batch 和插件属性应从运行日志或 `gst-inspect-1.0` 检查，不能仅凭画面推断。
+默认三路 headless profile 使用一组显式 `rois`：`[0,220,640,640]`、`[640,220,640,640]`、`[1280,220,640,640]`，再由 `include_full_frame: true` 加入 1 个全图 ROI。每路因此为 4 个 ROI，三路输入共 12 个 YOLOv11s ROI。将 `rois` 设为 `"[]"` 可恢复按 overlap 计算的完整网格；实际 batch 和插件属性应从运行日志或 `gst-inspect-1.0` 检查，不能仅凭画面推断。
 
 ## 下一步
 

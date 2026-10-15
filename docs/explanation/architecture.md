@@ -2,7 +2,7 @@
 
 ## 目标
 
-这条管线把多路视频或 CSI 相机统一成一个 DeepStream batch，同时保留每路 source 的身份。SAHI 在每帧上生成局部 ROI 和全图 ROI，检测结果先合并，再交给 tracker。ROS 2 元数据在 tiler 前读取，避免把不同 source 缩放到合成画布后再反推坐标。
+这条管线把多路视频或 CSI 相机统一成一个 DeepStream batch，同时保留每路 source 的身份。SAHI 对三路 source 共用一组 `rois`：非空时按显式 `[left, top, width, height]` 列表裁剪，空列表时按 overlap 生成默认网格，并可额外加入全图 ROI；检测结果先合并，再交给 tracker。ROS 2 元数据在 tiler 前读取，避免把不同 source 缩放到合成画布后再反推坐标。
 
 ## 数据流
 

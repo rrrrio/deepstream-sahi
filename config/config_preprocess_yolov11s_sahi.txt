@@ -6,7 +6,7 @@ maintain-aspect-ratio=1
 symmetric-padding=1
 processing-width=640
 processing-height=640
-# Three 1080p sources produce 27 ROIs with the batch-1 topic profile.
+# Three 1080p sources produce 12 explicit ROIs with the batch-1 profile.
 # Buffers remain attached until nvinfer consumes the original mux batch.
 scaling-buf-pool-size=32
 tensor-buf-pool-size=32

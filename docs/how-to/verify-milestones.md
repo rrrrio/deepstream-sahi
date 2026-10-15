@@ -64,7 +64,7 @@ source .colcon/install/setup.bash
 ./scripts/run_sim_3cam_headless.sh
 ```
 
-应看到三个 source 初始化，并持续运行超过单个输入文件时长。此步骤可继续检查 27 个 ROI、NMM、tracker 和 ROS topic；它不替代 CSI 检查。
+应看到三个 source 初始化，并持续运行超过单个输入文件时长。此步骤可继续检查 12 个显式 ROI、NMM、tracker 和 ROS topic；它不替代 CSI 检查。
 
 ## 6. 验证显示与无窗口模式
 

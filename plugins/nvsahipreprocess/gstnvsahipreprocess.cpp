@@ -57,6 +57,7 @@ enum {
   PROP_SLICE_HEIGHT,
   PROP_OVERLAP_WIDTH_RATIO,
   PROP_OVERLAP_HEIGHT_RATIO,
+  PROP_ROI_LIST,
   PROP_ENABLE_FULL_FRAME,
   PROP_TARGET_UNIQUE_IDS,
 };
@@ -72,6 +73,7 @@ enum {
 #define DEFAULT_SLICE_HEIGHT 640
 #define DEFAULT_OVERLAP_WIDTH_RATIO 0.2f
 #define DEFAULT_OVERLAP_HEIGHT_RATIO 0.2f
+#define DEFAULT_ROI_LIST ""
 #define DEFAULT_ENABLE_FULL_FRAME TRUE
 #define DEFAULT_CONFIG_FILE_PATH ""
 #define DEFAULT_TARGET_UNIQUE_IDS ""
@@ -121,16 +123,72 @@ static void gst_nvsahipreprocess_finalize(GObject *);
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-struct SliceBBox {
-  guint left, top, width, height;
-};
+static gboolean parse_roi_list(const gchar *text,
+                               std::vector<SliceBBox> &out_rois) {
+  out_rois.clear();
+  if (text == nullptr || text[0] == '\0') return TRUE;
+
+  std::stringstream list_stream(text);
+  std::string roi_text;
+  while (std::getline(list_stream, roi_text, ';')) {
+    std::stringstream roi_stream(roi_text);
+    std::string field;
+    gint64 values[4] = {};
+    guint count = 0;
+
+    while (std::getline(roi_stream, field, ',')) {
+      if (count >= 4) return FALSE;
+      std::stringstream field_stream(field);
+      gint64 parsed = 0;
+      std::string trailing;
+      if (!(field_stream >> parsed) || (field_stream >> trailing)) return FALSE;
+      if ((count < 2 && parsed < 0) || (count >= 2 && parsed <= 0) ||
+          parsed > G_MAXUINT)
+        return FALSE;
+      values[count++] = parsed;
+    }
+
+    if (count != 4) return FALSE;
+    out_rois.push_back({(guint)values[0], (guint)values[1], (guint)values[2],
+                        (guint)values[3]});
+  }
+  return !out_rois.empty();
+}
+
+static std::string serialize_roi_list(const std::vector<SliceBBox> &rois) {
+  std::stringstream stream;
+  for (guint i = 0; i < rois.size(); ++i) {
+    if (i > 0) stream << ';';
+    stream << rois[i].left << ',' << rois[i].top << ',' << rois[i].width << ','
+           << rois[i].height;
+  }
+  return stream.str();
+}
 
 static void compute_sahi_slices(guint image_width, guint image_height,
                                 guint slice_width, guint slice_height,
                                 gfloat overlap_w_ratio, gfloat overlap_h_ratio,
+                                const std::vector<SliceBBox> &explicit_rois,
                                 gboolean add_full_frame,
                                 std::vector<SliceBBox> &out_slices) {
   out_slices.clear();
+
+  if (!explicit_rois.empty()) {
+    out_slices = explicit_rois;
+    if (add_full_frame) {
+      gboolean has_full_frame = FALSE;
+      for (const auto &roi : out_slices) {
+        if (roi.left == 0 && roi.top == 0 && roi.width == image_width &&
+            roi.height == image_height) {
+          has_full_frame = TRUE;
+          break;
+        }
+      }
+      if (!has_full_frame)
+        out_slices.push_back({0, 0, image_width, image_height});
+    }
+    return;
+  }
 
   guint w_overlap = (guint)(slice_width * overlap_w_ratio);
   guint h_overlap = (guint)(slice_height * overlap_h_ratio);
@@ -475,8 +533,8 @@ static GstFlowReturn gst_nvsahipreprocess_submit_input_buffer(
 
     compute_sahi_slices(frame_width, frame_height, self->slice_width,
                         self->slice_height, self->overlap_width_ratio,
-                        self->overlap_height_ratio, self->enable_full_frame,
-                        slices);
+                        self->overlap_height_ratio, self->explicit_rois,
+                        self->enable_full_frame, slices);
 
     GST_DEBUG_OBJECT(self, "Source %d: %ux%u → %zu slices",
                      frame_meta->source_id, frame_width, frame_height,
@@ -1117,6 +1175,15 @@ static void gst_nvsahipreprocess_class_init(GstNvSahiPreProcessClass *klass) {
           (GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
   g_object_class_install_property(
+      gobject_class, PROP_ROI_LIST,
+      g_param_spec_string(
+          "roi-list", "ROI List",
+          "Semicolon-separated explicit ROIs as left,top,width,height. "
+          "An empty value selects the automatic grid.",
+          DEFAULT_ROI_LIST,
+          (GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
+  g_object_class_install_property(
       gobject_class, PROP_ENABLE_FULL_FRAME,
       g_param_spec_boolean(
           "enable-full-frame", "Enable Full Frame",
@@ -1172,6 +1239,7 @@ static void gst_nvsahipreprocess_init(GstNvSahiPreProcess *self) {
   self->slice_height = DEFAULT_SLICE_HEIGHT;
   self->overlap_width_ratio = DEFAULT_OVERLAP_WIDTH_RATIO;
   self->overlap_height_ratio = DEFAULT_OVERLAP_HEIGHT_RATIO;
+  self->explicit_rois.clear();
   self->enable_full_frame = DEFAULT_ENABLE_FULL_FRAME;
 
   self->transform_config_params.compute_mode =
@@ -1221,6 +1289,20 @@ static void gst_nvsahipreprocess_set_property(GObject *object, guint prop_id,
     case PROP_OVERLAP_HEIGHT_RATIO:
       self->overlap_height_ratio = g_value_get_float(value);
       break;
+    case PROP_ROI_LIST: {
+      const gchar *text = g_value_get_string(value);
+      std::vector<SliceBBox> parsed_rois;
+      if (!parse_roi_list(text, parsed_rois)) {
+        GST_WARNING_OBJECT(
+            self,
+            "Invalid roi-list '%s'; expected left,top,width,height entries",
+            text ? text : "");
+        self->explicit_rois.clear();
+      } else {
+        self->explicit_rois.swap(parsed_rois);
+      }
+      break;
+    }
     case PROP_ENABLE_FULL_FRAME:
       self->enable_full_frame = g_value_get_boolean(value);
       break;
@@ -1271,6 +1353,11 @@ static void gst_nvsahipreprocess_get_property(GObject *object, guint prop_id,
     case PROP_OVERLAP_HEIGHT_RATIO:
       g_value_set_float(value, self->overlap_height_ratio);
       break;
+    case PROP_ROI_LIST: {
+      const std::string serialized = serialize_roi_list(self->explicit_rois);
+      g_value_set_string(value, serialized.c_str());
+      break;
+    }
     case PROP_ENABLE_FULL_FRAME:
       g_value_set_boolean(value, self->enable_full_frame);
       break;

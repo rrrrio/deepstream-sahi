@@ -26,6 +26,7 @@ from .pipeline_common import (  # noqa: E402
     link_elements,
     make_element,
     normalize_pipeline_build_params,
+    serialize_sahi_rois,
     try_make_element,
 )
 
@@ -55,7 +56,14 @@ def _setup_native_preprocess(params):
     _require_property(preprocess, "slice-height", params.slice_height)
     _require_property(preprocess, "overlap-width-ratio", params.overlap_h)
     _require_property(preprocess, "overlap-height-ratio", params.overlap_v)
-    _require_property(preprocess, "enable-full-frame", True)
+    _require_property(
+        preprocess,
+        "roi-list",
+        serialize_sahi_rois(params.rois),
+    )
+    _require_property(
+        preprocess, "enable-full-frame", params.include_full_frame
+    )
     return preprocess
 
 

@@ -14,7 +14,7 @@
 
 节点通过 ROS 2 参数构造 source、streammux、SAHI、tracker、OSD 和输出 publisher。`sources` 是多路入口；`source_names` 与它按位置对应，并用于 OSD 标签和 ROS topic 名。为保持旧命令可用，`source` 在 `sources` 为空时提供单路入口。
 
-SAHI 使用输入尺寸、切片尺寸和重叠比例生成 ROI。默认 1920x1080、640x640、0.2/0.2 会生成 9 个 ROI；当 `pgie_batch_size` 为 0 时，节点使用全部 source ROI。显式 batch 可小于总 ROI，但必须整除总数。
+SAHI 使用输入尺寸、切片尺寸、显式 ROI 列表和重叠比例生成 ROI。`rois` 非空时直接使用列表中的 `[left, top, width, height]`，三路 source 共用同一组配置；`rois: "[]"` 或空字符串时按 overlap 使用完整网格。默认 1920x1080、640x640、0.2/0.2 的网格模式会生成 9 个局部 ROI；三路 profile 使用 3 个显式中心横向切片，并由 `include_full_frame` 加 1 个全图 ROI。`pgie_batch_size` 为 0 时，节点使用全部 source ROI；显式 batch 必须整除总 ROI。
 
 默认模型是动态 batch YOLOv11s COCO-80 ONNX。它的输入是 `images`，形状为 `batch×3×640×640`；输出 `output0` 的形状为 `batch×84×anchors`。前四个 channel 是中心点和宽高，后 80 个 channel 是类别置信度。`libnvdsinfer_yolov11s.so` 在 nvinfer 内解码该格式，nvinfer 的 NMS 再处理单个 tile 的重叠框，SAHI postprocess 处理 tile 间重复框。
 
@@ -84,6 +84,8 @@ slice_width: 640
 slice_height: 640
 overlap_h: 0.2
 overlap_v: 0.2
+rois: "[[0,220,640,640], [640,220,640,640], [1280,220,640,640]]"
+include_full_frame: true
 tracker_enabled: true
 display: false
 publish_detections: true
@@ -101,6 +103,8 @@ publish_detections: true
 | `width`, `height` | int / `1920`, `1080` | 输入帧尺寸和 SAHI ROI 计算基准。 |
 | `slice_width`, `slice_height` | int / `640`, `640` | YOLOv11s SAHI 切片尺寸。 |
 | `overlap_h`, `overlap_v` | float / `0.2` | 水平和垂直重叠比例，范围为 `[0, 1)`。 |
+| `rois` | string / `""` | JSON 风格的 ROI 列表，每项为 `[left, top, width, height]`；例如 `"[[0,220,640,640], [640,220,640,640]]"`。空字符串或 `"[]"` 使用 overlap 计算默认网格。三路 source 共用这组 ROI。 |
+| `include_full_frame` | bool / `true` | 是否额外加入 `[0,0,width,height]` 全图 ROI；显式列表已经包含全图时不会重复添加。 |
 | `pgie_batch_size` | int / `0` | `<=0` 时使用总 ROI；显式值必须整除总 ROI。 |
 | `det_interval` | int / `2` | nvinfer 检测间隔；负值表示不主动设置。 |
 | `merge_enabled` | bool / `true` | SAHI 模式是否启用 NMM。 |
