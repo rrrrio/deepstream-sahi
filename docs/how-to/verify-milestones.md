@@ -187,7 +187,32 @@ ros2 launch deepstream deepstream.launch.py \
 
 只有产品明确选择 Argus 且三路 Argus 独立检查通过后才执行；它不影响 V4L2 profile 的验收。
 
-## 14. 回滚
+## 14. 运行 30 分钟稳定性验收
+
+三路真实相机的最终验收使用无窗口路径，避免显示 sink 抢占检测所需的 GPU surface。脚本默认运行 1800 秒，并同时检查：
+
+- `camera_0`、`camera_1`、`camera_2` 三个 detection topic 持续有消息。
+- 跳过启动后的第一个 10 秒预热窗口后，每个窗口的频率不低于 8 Hz。
+- 三路同一窗口的频率差不超过 1 Hz。
+- 每路整个测试期间的相对抖动不超过 25%。
+- DeepStream 进程未提前退出，日志没有 `NVDSINFER_TENSORRT_ERROR`、`Failed in mem copy`、CUDA illegal memory access、`Signal lost` 或设备 busy 错误。
+
+执行：
+
+```bash
+./scripts/verify_v4l2_stability.sh
+```
+
+脚本默认使用 `config/v4l2_3cam.yaml`，但强制 `display=false`、`publish_detections=true` 和 surfaceless EGL。首个窗口只用于预热，不参与速率门槛判断。该 profile 还将缩放池固定为 CUDA device memory，并在支持时让 V4L2 相机的 180° `nvvideoconvert` 使用 GPU compute，避免 Jetson 默认 surface-array/VIC 拷贝路径的长期 `Failed in mem copy`。当前 profile 包含每路 3 个切片加 1 个全图 ROI，batch 1 在目标 Orin 上的实际处理频率约为 12.6 Hz；`camera_fps: 30` 表示相机输入能力，不是检测 topic 的承诺频率。若产品需要不同吞吐门槛，可显式覆盖，例如：
+
+```bash
+./scripts/verify_v4l2_stability.sh \
+  --duration 1800 --min-rate 9 --max-relative-jitter 0.2
+```
+
+通过后保留 `.state/stability/<UTC时间>/launch.log` 和 `topic-rates.log` 作为验收证据。测试中途退出、话题停止发布或日志出现运行期错误都判定失败。
+
+## 15. 回滚
 
 停止当前 launch 并确认进程退出。保留失败日志和环境快照。不要删除 DeepStream SDK、不要修改宿主机设备节点，也不要把容器内临时节点当作真实硬件映射。
 

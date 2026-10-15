@@ -347,6 +347,10 @@ def create_v4l2_source_bin(
         ),
     )
     converter.set_property("flip-method", _flip_method_for_rotation(rotation))
+    # Camera-backed 180-degree conversion is unstable through the default VIC
+    # path on this Jetson profile; keep it on CUDA when the property exists.
+    if converter.find_property("compute-hw") is not None:
+        converter.set_property("compute-hw", 1)
     capsfilter.set_property(
         "caps", Gst.Caps.from_string("video/x-raw(memory:NVMM),format=NV12")
     )

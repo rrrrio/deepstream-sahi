@@ -387,6 +387,7 @@ static gboolean batch_transformation(GstNvSahiPreProcess *self,
   if (*sync_obj != NULL) {
     NvBufSurfTransformSyncObjWait(*sync_obj, -1);
     NvBufSurfTransformSyncObjDestroy(sync_obj);
+    *sync_obj = NULL;
   }
 
   return TRUE;
@@ -632,8 +633,6 @@ static GstFlowReturn gst_nvsahipreprocess_submit_input_buffer(
         self->batch_insurf.numFilled = 0;
         self->batch_outsurf.numFilled = 0;
 
-        if (sync_obj) batch->sync_objects.push_back(sync_obj);
-
         g_mutex_lock(&self->preprocess_lock);
         g_queue_push_tail(self->preprocess_queue, batch.get());
         g_cond_broadcast(&self->preprocess_cond);
@@ -653,8 +652,6 @@ static GstFlowReturn gst_nvsahipreprocess_submit_input_buffer(
     }
     self->batch_insurf.numFilled = 0;
     self->batch_outsurf.numFilled = 0;
-
-    if (sync_obj) batch->sync_objects.push_back(sync_obj);
   }
 
   if (batch != nullptr) {

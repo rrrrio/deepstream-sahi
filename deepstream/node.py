@@ -73,6 +73,7 @@ class DeepStreamNode(Node):
         self._running = False
         self._merge_cfg = None
         self._latest_source_stamps = {}
+        self._stop_lock = threading.Lock()
 
         self._declare_parameters()
         self._resolve_runtime_config()
@@ -571,7 +572,9 @@ class DeepStreamNode(Node):
                 if debug:
                     self.get_logger().error(f"GStreamer debug: {debug}")
                 self._publish_status(f"error: {err}")
-                self._running = False
+                self.stop_pipeline()
+                if rclpy.ok():
+                    rclpy.shutdown()
             elif mtype == Gst.MessageType.WARNING:
                 warn, debug = message.parse_warning()
                 self.get_logger().warning(f"GStreamer warning: {warn}")
@@ -596,30 +599,30 @@ class DeepStreamNode(Node):
                 self._running = False
 
     def stop_pipeline(self):
-        self._running = False
-        if self._pipeline is not None:
+        with self._stop_lock:
+            self._running = False
+            pipeline = self._pipeline
+            bus_thread = self._bus_thread
+            self._pipeline = None
+            self._bus_thread = None
+            self._bus = None
+            self._pgie = None
+            self._annotated_appsinks = {}
+            self._latest_source_stamps = {}
+
+        if pipeline is not None:
             try:
-                self._pipeline.send_event(Gst.Event.new_eos())
+                pipeline.set_state(Gst.State.NULL)
             except Exception:
-                pass
-            try:
-                self._pipeline.set_state(Gst.State.NULL)
-            except KeyboardInterrupt:
                 pass
 
         if (
-            self._bus_thread is not None
-            and self._bus_thread.is_alive()
-            and threading.current_thread() is not self._bus_thread
+            bus_thread is not None
+            and bus_thread.is_alive()
+            and threading.current_thread() is not bus_thread
         ):
-            self._bus_thread.join(timeout=1.0)
+            bus_thread.join(timeout=1.0)
 
-        self._bus_thread = None
-        self._bus = None
-        self._pipeline = None
-        self._pgie = None
-        self._annotated_appsinks = {}
-        self._latest_source_stamps = {}
         self._publish_status("stopped")
 
     def destroy_node(self):

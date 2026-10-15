@@ -1,6 +1,6 @@
 # 首次运行三路文件
 
-本教程带你用三个本地视频完成一次三路 SAHI 运行。完成后，你能从每路 ROS 2 topic 读取检测结果。OSD 保留为后续单独的显示验收步骤。
+本教程带你用三个本地视频完成一次三路 SAHI 运行。完成后，你能从每路 ROS 2 topic 读取检测结果。OSD 保留为后续单独的显示验收步骤。若想先理解这条管线为何使用 NVMM、native SAHI plugin 和 headless sink，请先阅读[理解 NVIDIA DeepStream 管线](understand-nvidia-pipeline.md)。
 
 ## 前置条件
 
@@ -73,6 +73,7 @@ ros2 topic echo --once /deepstream/camera_0/detections
 
 ## 下一步
 
+- 需要理解 source、batch、SAHI 和 metadata 边界时，参见[理解 NVIDIA DeepStream 管线](understand-nvidia-pipeline.md)。
 - 需要相机时，参见[从文件切换到 CSI](../how-to/switch-file-to-csi.md)。
 - 需要无窗口运行时，参见[显示与无窗口运行](../how-to/run-display-and-headless.md)。
 - 需要字段定义时，参见[ROS 2 话题参考](../reference/ros2-topics.md)。
