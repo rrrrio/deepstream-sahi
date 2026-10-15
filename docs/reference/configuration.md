@@ -77,6 +77,7 @@ flowchart LR
 mode: sahi
 sources: ["file:///data/cam0.mp4", "file:///data/cam1.mp4", "file:///data/cam2.mp4"]
 source_names: [camera_0, camera_1, camera_2]
+source_rotations: [0, 0, 0]
 file_loop: true
 camera_fps: 30
 v4l2_pixel_format: UYVY
@@ -97,6 +98,7 @@ publish_detections: true
 | `source` | string / 空 | 单路兼容参数；仅在 `sources` 为空时使用。 |
 | `sources` | string[] / 空 | 至少一个 source；支持文件路径、`file://`、RTSP、V4L2 和 `argus://N`。 |
 | `source_names` | string[] / 自动 | 必须与 `sources` 等长且唯一；为空时生成 `camera_0` 等名称。 |
+| `source_rotations` | int[] / 全部 `0` | 按 source 顺序设置旋转角度，支持 `0`、`90`、`180`、`270` 度；长度必须与 `sources` 相同。旋转发生在进入 `nvstreammux` 前，因此检测、跟踪、OSD 和 ROS 坐标保持一致。 |
 | `file_loop` | bool / `true` | 文件 source 播放结束后是否循环。 |
 | `camera_fps` | int / `30` | Argus source 请求的帧率。 |
 | `v4l2_pixel_format` | string / `UYVY` | V4L2 raw source 的输入像素格式；应与宿主机 `v4l2-ctl` 报告的格式一致。 |

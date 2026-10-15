@@ -3,6 +3,7 @@ deepstream_node:
     mode: sahi
     sources: [argus://0, argus://1, argus://2]
     source_names: [camera_0, camera_1, camera_2]
+    source_rotations: [180, 180, 180]
     file_loop: false
     camera_fps: 30
     width: 1920

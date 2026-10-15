@@ -27,6 +27,7 @@ from .source_utils import (  # noqa: E402
     is_live_source,
     is_v4l2_source,
     normalize_source_config,
+    normalize_source_rotations,
     v4l2_device_path,
 )
 
@@ -76,6 +77,7 @@ class PipelineBuildParams:
     # Merge config for nvsahipostprocess plugin
     merge_config: Optional[MergeConfig] = None
     display_sink: str = "nv3dsink"
+    source_rotations: List[int] = field(default_factory=list)
 
 
 @dataclass
@@ -97,7 +99,14 @@ def normalize_pipeline_build_params(
         params.sources,
         params.source_names,
     )
-    return replace(params, sources=sources, source_names=source_names)
+    return replace(
+        params,
+        sources=sources,
+        source_names=source_names,
+        source_rotations=normalize_source_rotations(
+            params.source_rotations, len(sources)
+        ),
+    )
 
 
 # ─── SAHI ROI computation ─────────────────────────────────────────────
@@ -231,6 +240,10 @@ def to_uri(path_or_uri: str) -> str:
     return pathlib.Path(path_or_uri).expanduser().resolve().as_uri()
 
 
+def _flip_method_for_rotation(rotation: int) -> int:
+    return {0: 0, 90: 1, 180: 2, 270: 3}[rotation]
+
+
 def cb_newpad(decodebin, decoder_src_pad, data):
     caps = decoder_src_pad.get_current_caps() or decoder_src_pad.query_caps(
         None
@@ -243,9 +256,31 @@ def cb_newpad(decodebin, decoder_src_pad, data):
     features = caps.get_features(0)
 
     if "video" in gstname and features.contains(GST_CAPS_FEATURES_NVMM):
-        source_bin = data
+        source_bin, rotation = data
         bin_ghost_pad = source_bin.get_static_pad("src")
-        if not bin_ghost_pad.set_target(decoder_src_pad):
+        if rotation == 0:
+            target_pad = decoder_src_pad
+        else:
+            converter = Gst.ElementFactory.make(
+                "nvvideoconvert", f"uri-rotate-{source_bin.get_name()}"
+            )
+            if not converter:
+                sys.stderr.write("Failed to create URI rotation converter.\n")
+                return
+            converter.set_property(
+                "flip-method", _flip_method_for_rotation(rotation)
+            )
+            source_bin.add(converter)
+            sink_pad = converter.get_static_pad("sink")
+            if (
+                not sink_pad
+                or decoder_src_pad.link(sink_pad) != Gst.PadLinkReturn.OK
+            ):
+                sys.stderr.write("Failed to link URI rotation converter.\n")
+                return
+            converter.sync_state_with_parent()
+            target_pad = converter.get_static_pad("src")
+        if not target_pad or not bin_ghost_pad.set_target(target_pad):
             sys.stderr.write(
                 "Failed to link decoder src pad to source bin ghost pad\n"
             )
@@ -283,6 +318,7 @@ def create_v4l2_source_bin(
     height: int,
     fps: int,
     pixel_format: str,
+    rotation: int = 0,
 ):
     """Create a raw V4L2 source bin that exposes NV12 video in NVMM memory."""
     source_bin = Gst.Bin.new(f"camera-source-bin-{index:02d}")
@@ -310,6 +346,7 @@ def create_v4l2_source_bin(
             f"width={width},height={height},framerate={fps}/1"
         ),
     )
+    converter.set_property("flip-method", _flip_method_for_rotation(rotation))
     capsfilter.set_property(
         "caps", Gst.Caps.from_string("video/x-raw(memory:NVMM),format=NV12")
     )
@@ -362,7 +399,7 @@ def cb_mp4_demux_pad(demux, demux_src_pad, parser):
             sys.stderr.write("Failed to link MP4 video pad to h264parse.\n")
 
 
-def create_h264_file_source_bin(index: int, source: str):
+def create_h264_file_source_bin(index: int, source: str, rotation: int = 0):
     """Create an audio-free local H.264 MP4 source that stays in NVMM memory."""
     source_bin = Gst.Bin.new(f"file-source-bin-{index:02d}")
     if not source_bin:
@@ -372,17 +409,36 @@ def create_h264_file_source_bin(index: int, source: str):
     demux = Gst.ElementFactory.make("qtdemux", f"file-demux-{index}")
     parser = Gst.ElementFactory.make("h264parse", f"file-parser-{index}")
     decoder = Gst.ElementFactory.make("nvv4l2decoder", f"file-decoder-{index}")
-    if not all((filesrc, demux, parser, decoder)):
+    converter = None
+    if rotation:
+        converter = Gst.ElementFactory.make(
+            "nvvideoconvert", f"file-rotate-{index}"
+        )
+        if converter:
+            converter.set_property(
+                "flip-method", _flip_method_for_rotation(rotation)
+            )
+    if not all((filesrc, demux, parser, decoder)) or (
+        rotation and converter is None
+    ):
         return None
 
     filesrc.set_property("location", local_file_path(source))
-    for element in (filesrc, demux, parser, decoder):
+    elements = [filesrc, demux, parser, decoder]
+    if converter:
+        elements.append(converter)
+    for element in elements:
         source_bin.add(element)
     if not filesrc.link(demux) or not parser.link(decoder):
         return None
+    output = decoder
+    if converter:
+        if not decoder.link(converter):
+            return None
+        output = converter
     demux.connect("pad-added", cb_mp4_demux_pad, parser)
 
-    source_pad = decoder.get_static_pad("src")
+    source_pad = output.get_static_pad("src")
     if not source_pad or not source_bin.add_pad(
         Gst.GhostPad.new("src", source_pad)
     ):
@@ -396,6 +452,7 @@ def create_argus_source_bin(
     width: int,
     height: int,
     fps: int,
+    rotation: int = 0,
 ):
     """Create a Jetson CSI source that remains in NVMM memory."""
     source_bin = Gst.Bin.new(f"argus-source-bin-{index:02d}")
@@ -406,7 +463,24 @@ def create_argus_source_bin(
         "nvarguscamerasrc", f"argus-camera-{index}"
     )
     capsfilter = Gst.ElementFactory.make("capsfilter", f"argus-caps-{index}")
-    if not camera or not capsfilter:
+    converter = None
+    output_capsfilter = None
+    if rotation:
+        converter = Gst.ElementFactory.make(
+            "nvvideoconvert", f"argus-rotate-{index}"
+        )
+        output_capsfilter = Gst.ElementFactory.make(
+            "capsfilter", f"argus-output-caps-{index}"
+        )
+        if converter:
+            converter.set_property(
+                "flip-method", _flip_method_for_rotation(rotation)
+            )
+    if (
+        not camera
+        or not capsfilter
+        or (rotation and (converter is None or output_capsfilter is None))
+    ):
         return None
 
     camera.set_property("sensor-id", argus_sensor_id(source))
@@ -418,12 +492,26 @@ def create_argus_source_bin(
             f"format=NV12,width={width},height={height},framerate={fps}/1"
         ),
     )
-    source_bin.add(camera)
-    source_bin.add(capsfilter)
+    elements = [camera, capsfilter]
+    if converter and output_capsfilter:
+        elements.extend((converter, output_capsfilter))
+    for element in elements:
+        source_bin.add(element)
     if not camera.link(capsfilter):
         return None
+    output = capsfilter
+    if converter and output_capsfilter:
+        output_capsfilter.set_property(
+            "caps",
+            Gst.Caps.from_string("video/x-raw(memory:NVMM),format=NV12"),
+        )
+        if not capsfilter.link(converter) or not converter.link(
+            output_capsfilter
+        ):
+            return None
+        output = output_capsfilter
 
-    source_pad = capsfilter.get_static_pad("src")
+    source_pad = output.get_static_pad("src")
     if not source_pad or not source_bin.add_pad(
         Gst.GhostPad.new("src", source_pad)
     ):
@@ -431,7 +519,9 @@ def create_argus_source_bin(
     return source_bin
 
 
-def create_uri_source_bin(index: int, source: str, file_loop: bool):
+def create_uri_source_bin(
+    index: int, source: str, file_loop: bool, rotation: int = 0
+):
     """Create a DeepStream URI source with NVDEC and optional file looping."""
     uri = to_uri(source)
     source_bin = Gst.Bin.new(f"uri-source-bin-{index:02d}")
@@ -446,7 +536,7 @@ def create_uri_source_bin(index: int, source: str, file_loop: bool):
     uri_source.set_property("disable-audio", True)
     if is_file_source(source):
         uri_source.set_property("file-loop", file_loop)
-    uri_source.connect("pad-added", cb_newpad, source_bin)
+    uri_source.connect("pad-added", cb_newpad, (source_bin, rotation))
     uri_source.connect("child-added", decodebin_child_added, source_bin)
 
     source_bin.add(uri_source)
@@ -458,6 +548,10 @@ def create_uri_source_bin(index: int, source: str, file_loop: bool):
 
 
 def create_source_bin(index: int, source: str, params: PipelineBuildParams):
+    rotations = normalize_source_rotations(
+        params.source_rotations, len(params.sources)
+    )
+    rotation = rotations[index]
     if is_argus_source(source):
         return create_argus_source_bin(
             index=index,
@@ -465,6 +559,7 @@ def create_source_bin(index: int, source: str, params: PipelineBuildParams):
             width=params.width,
             height=params.height,
             fps=params.camera_fps,
+            rotation=rotation,
         )
     if is_v4l2_source(source):
         return create_v4l2_source_bin(
@@ -474,11 +569,12 @@ def create_source_bin(index: int, source: str, params: PipelineBuildParams):
             height=params.height,
             fps=params.camera_fps,
             pixel_format=params.v4l2_pixel_format,
+            rotation=rotation,
         )
     if is_h264_mp4_file(source):
-        return create_h264_file_source_bin(index, source)
+        return create_h264_file_source_bin(index, source, rotation)
 
-    return create_uri_source_bin(index, source, params.file_loop)
+    return create_uri_source_bin(index, source, params.file_loop, rotation)
 
 
 def make_element(factory_name: str, element_name: str):

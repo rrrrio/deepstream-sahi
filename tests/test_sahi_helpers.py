@@ -347,6 +347,97 @@ def test_pipeline_params_retain_legacy_single_source_contract():
 
     assert params.sources == ["file:///tmp/input.mp4"]
     assert params.source_names == ["camera_0"]
+    assert params.source_rotations == [0]
+
+
+def test_pipeline_params_preserve_per_source_rotation():
+    from deepstream.pipeline_common import (
+        PipelineBuildParams,
+        normalize_pipeline_build_params,
+    )
+
+    params = normalize_pipeline_build_params(
+        PipelineBuildParams(
+            infer_config="/tmp/infer.txt",
+            sources=["/dev/video0", "/dev/video1"],
+            source_rotations=[180, 90],
+        )
+    )
+
+    assert params.source_rotations == [180, 90]
+
+
+def test_source_rotation_maps_to_nvidia_flip_methods():
+    from deepstream.pipeline_common import _flip_method_for_rotation
+
+    assert [
+        _flip_method_for_rotation(value) for value in (0, 90, 180, 270)
+    ] == [
+        0,
+        1,
+        2,
+        3,
+    ]
+
+
+def test_v4l2_source_bin_configures_rotate_180(monkeypatch):
+    from deepstream import pipeline_common
+
+    created = {}
+
+    class LinkableElement(_FakeElement):
+        def link(self, _downstream):
+            return True
+
+    class FakeBin(LinkableElement):
+        def add(self, element):
+            return True
+
+        def add_pad(self, _pad):
+            return True
+
+    def make(factory, name):
+        element = LinkableElement(name)
+        created[factory] = element
+        return element
+
+    monkeypatch.setattr(
+        pipeline_common.Gst,
+        "Bin",
+        types.SimpleNamespace(new=lambda _name: FakeBin("source-bin")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pipeline_common.Gst,
+        "ElementFactory",
+        types.SimpleNamespace(make=make),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pipeline_common.Gst,
+        "Caps",
+        types.SimpleNamespace(from_string=lambda value: value),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pipeline_common.Gst,
+        "GhostPad",
+        types.SimpleNamespace(new=lambda *_args: object()),
+        raising=False,
+    )
+
+    source_bin = pipeline_common.create_v4l2_source_bin(
+        index=0,
+        source="/dev/video0",
+        width=1920,
+        height=1080,
+        fps=30,
+        pixel_format="UYVY",
+        rotation=180,
+    )
+
+    assert source_bin is not None
+    assert created["nvvideoconvert"].properties["flip-method"] == 2
 
 
 def test_pipeline_params_reject_missing_sources_before_building():

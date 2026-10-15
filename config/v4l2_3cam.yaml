@@ -6,6 +6,7 @@ deepstream_node:
       - /dev/v4l/by-path/platform-tegra-capture-vi-video-index6
       - /dev/v4l/by-path/platform-tegra-capture-vi-video-index8
     source_names: [camera_0, camera_1, camera_2]
+    source_rotations: [180, 180, 180]
     file_loop: false
     camera_fps: 30
     v4l2_pixel_format: UYVY

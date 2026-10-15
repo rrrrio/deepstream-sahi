@@ -144,3 +144,19 @@ def normalize_source_config(
         )
 
     return resolved_sources, resolved_names
+
+
+def normalize_source_rotations(
+    values: Iterable[int], source_count: int
+) -> list[int]:
+    """Validate per-source clockwise rotations in quarter-turn degrees."""
+    rotations = [int(value) for value in values]
+    if not rotations:
+        return [0] * source_count
+    if len(rotations) != source_count:
+        raise ValueError(
+            "source_rotations must have the same length as sources"
+        )
+    if any(rotation not in (0, 90, 180, 270) for rotation in rotations):
+        raise ValueError("source_rotations values must be 0, 90, 180, or 270")
+    return rotations

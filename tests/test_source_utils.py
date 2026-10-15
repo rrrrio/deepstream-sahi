@@ -6,6 +6,7 @@ import pytest
 from deepstream.source_utils import (
     is_live_source,
     is_v4l2_source,
+    normalize_source_rotations,
     v4l2_device_path,
 )
 
@@ -145,3 +146,13 @@ def test_validates_source_and_name_arrays():
         source_utils.normalize_source_config("", [], ["camera_0"])
     with pytest.raises(ValueError):
         source_utils.normalize_source_config("", ["argus://0"], ["camera-0"])
+
+
+def test_normalizes_per_source_rotations():
+    assert normalize_source_rotations([], 3) == [0, 0, 0]
+    assert normalize_source_rotations([180, 0, 270], 3) == [180, 0, 270]
+
+    with pytest.raises(ValueError, match="same length"):
+        normalize_source_rotations([180], 3)
+    with pytest.raises(ValueError, match="0, 90, 180, or 270"):
+        normalize_source_rotations([45], 1)

@@ -77,9 +77,11 @@ def test_three_camera_profiles_keep_the_sahi_batch_contract(
     )
     if profile_name == "csi_3cam.yaml":
         assert all(is_argus_source(source) for source in sources)
+        assert profile["source_rotations"] == [180, 180, 180]
     elif profile_name == "v4l2_3cam.yaml":
         assert all(is_v4l2_source(source) for source in sources)
         assert profile["v4l2_pixel_format"] == "UYVY"
+        assert profile["source_rotations"] == [180, 180, 180]
         assert profile["sources"] == [
             "/dev/v4l/by-path/platform-tegra-capture-vi-video-index0",
             "/dev/v4l/by-path/platform-tegra-capture-vi-video-index6",

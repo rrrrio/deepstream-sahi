@@ -56,6 +56,7 @@ from .source_utils import (  # noqa: E402
     configure_headless_v4l2_egl,
     is_v4l2_source,
     normalize_source_config,
+    normalize_source_rotations,
     validate_v4l2_device,
 )
 
@@ -83,6 +84,9 @@ class DeepStreamNode(Node):
         self.declare_parameter("source", "")
         self.declare_parameter("sources", Parameter.Type.STRING_ARRAY)
         self.declare_parameter("source_names", Parameter.Type.STRING_ARRAY)
+        self.declare_parameter(
+            "source_rotations", Parameter.Type.INTEGER_ARRAY
+        )
         self.declare_parameter("file_loop", True)
         self.declare_parameter("camera_fps", 30)
         self.declare_parameter("v4l2_pixel_format", "UYVY")
@@ -127,6 +131,10 @@ class DeepStreamNode(Node):
             legacy_source,
             sources_value,
             names_value,
+        )
+        self.source_rotations = normalize_source_rotations(
+            self.get_parameter("source_rotations").value or [],
+            len(self.sources),
         )
         for source in self.sources:
             if is_v4l2_source(source):
@@ -328,6 +336,7 @@ class DeepStreamNode(Node):
             rois=rois,
             include_full_frame=include_full_frame,
             merge_config=self._merge_cfg,
+            source_rotations=self.source_rotations,
         )
 
         validate_runtime_configs(
