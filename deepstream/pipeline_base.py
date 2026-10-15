@@ -99,6 +99,7 @@ def build_pipeline(params: PipelineBuildParams) -> PipelineBuildResult:
         pipeline=pipeline,
         upstream=post_tracker,
         display=params.display,
+        display_sink=params.display_sink,
         publish_annotated=params.publish_annotated,
         source_names=params.source_names,
         tiled_width=params.tiled_width,

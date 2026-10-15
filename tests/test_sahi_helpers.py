@@ -473,10 +473,12 @@ def test_display_queue_drops_frames_when_the_osd_sink_stalls(monkeypatch):
             return True
 
     elements = {}
+    factories = {}
 
     def make(factory, name):
         element = LinkableElement(name)
         elements[name] = element
+        factories[name] = factory
         return element
 
     monkeypatch.setattr(pipeline_common, "make_element", make)
@@ -488,9 +490,52 @@ def test_display_queue_drops_frames_when_the_osd_sink_stalls(monkeypatch):
         publish_annotated=False,
     )
 
-    assert elements["queue-display"].properties["leaky"] == 2
+    assert elements["queue-display"].properties["leaky"] == 1
     assert elements["queue-display"].properties["max-size-buffers"] == 1
+    assert elements["queue-display"].properties["max-size-bytes"] == 0
+    assert elements["queue-display"].properties["max-size-time"] == 0
+    assert (
+        elements["caps-display-rgba"].properties["caps"]
+        == "video/x-raw(memory:NVMM),format=RGBA"
+    )
+    assert elements["nvosd"].properties["process-mode"] == 1
+    assert factories["display-sink"] == "nv3dsink"
+    for queue_name in ("queue-tiler", "queue-conv", "queue-output"):
+        assert elements[queue_name].properties["leaky"] == 1
+        assert elements[queue_name].properties["max-size-buffers"] == 1
+        assert elements[queue_name].properties["max-size-bytes"] == 0
+        assert elements[queue_name].properties["max-size-time"] == 0
     assert elements["display-sink"].properties["async"] is False
+
+
+def test_display_sink_can_be_disabled_without_disabling_osd(monkeypatch):
+    from deepstream import pipeline_common
+
+    class FakePipeline:
+        def add(self, _element):
+            return True
+
+    class LinkableElement(_FakeElement):
+        def link(self, _downstream):
+            return True
+
+    factories = {}
+
+    def make(factory, name):
+        factories[name] = factory
+        return LinkableElement(name)
+
+    monkeypatch.setattr(pipeline_common, "make_element", make)
+
+    pipeline_common.add_output_branches(
+        pipeline=FakePipeline(),
+        upstream=LinkableElement("upstream"),
+        display=True,
+        publish_annotated=False,
+        display_sink="fakesink",
+    )
+
+    assert factories["display-sink"] == "fakesink"
 
 
 def test_annotated_output_creates_one_nvjpeg_appsink_per_source(monkeypatch):
@@ -557,7 +602,10 @@ def test_tracker_tensor_meta_is_configured_only_when_requested(tmp_path):
     from deepstream.pipeline_common import configure_tracker
 
     config = tmp_path / "tracker.txt"
-    config.write_text("[tracker]\ntracker-width=640\n", encoding="utf-8")
+    config.write_text(
+        "[tracker]\ntracker-width=640\ndisplay-tracking-id=0\n",
+        encoding="utf-8",
+    )
     tracker = _FakeElement(
         "tracker",
         {
@@ -577,6 +625,7 @@ def test_tracker_tensor_meta_is_configured_only_when_requested(tmp_path):
 
     assert tracker.properties["input-tensor-meta"] is True
     assert tracker.properties["tensor-meta-gie-id"] == 1
+    assert tracker.properties["display-tracking-id"] is False
 
 
 def test_native_sahi_plugin_properties_and_metric_validation(monkeypatch):

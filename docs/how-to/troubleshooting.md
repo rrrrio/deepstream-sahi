@@ -62,6 +62,71 @@ ros2 launch deepstream deepstream.launch.py \
 
 确认容器使用 NVIDIA runtime，且 Argus socket、设备节点和共享内存已映射。逐路用 `argus://0`、`argus://1`、`argus://2` 检查 sensor ID，再运行三路。应用参数无法创建缺失的宿主机设备。
 
+## `cuDCF` 非法显存访问并连锁触发 TensorRT 错误
+
+如果日志先出现：
+
+```text
+GPUassert: an illegal memory access was encountered ... cuDCFv2/cuDCF.cu
+Failed in mem copy
+NVDSINFER_TENSORRT_ERROR
+```
+
+先把第一条 `cuDCF` 错误视为根因。后续的 CUDA stream synchronization、TensorRT
+enqueue、GStreamer pipeline 和 `cuGraphicsEGLRegisterImage` 错误可能只是同一个 CUDA
+上下文已经损坏后的连锁结果，不表示三路相机地址或 V4L2 caps 失效。
+
+真实相机 profile 显式使用 IOU tracker，并关闭 tracker 内置的 tracking ID 绘制；这不会删除
+tracker metadata 或 ROS detection 中的 tracking ID。在目标 Jetson 上临时验证时也可以覆盖参数：
+
+```bash
+EGL_PLATFORM=surfaceless ros2 run deepstream deepstream_node \
+  --ros-args --params-file config/v4l2_3cam.yaml \
+  -p tracker_config:=config/deepstream_tracker_iou_config.txt \
+  -p display:=false
+```
+
+如果禁用 tracker 或使用 IOU tracker 可以持续运行，而默认 NvDCF 在
+`cuDCFv2` 失败，应继续使用 IOU profile，并把 NvDCF 作为需要单独升级或替换
+DeepStream/JetPack 组合后再评估的实验路径。
+
+## `nvdsosd` 报 EGL 700 或无法绘制图形
+
+如果日志第一条运行期错误是：
+
+```text
+Unable to draw shapes onto video frame by GPU
+cuGraphicsEGLRegisterImage failed: 700
+Failed in mem copy
+```
+
+根因在显示分支的 GPU OSD/EGL surface 协商，不在 V4L2 source 或 tracker。此时
+`display-tracking-id=0` 不能修复问题；它只控制 tracker 是否绘制 ID，不会改变
+`nvdsosd` 的 CUDA/EGL 路径。
+
+显示分支现在显式使用：
+
+```text
+nvvideoconvert -> video/x-raw(memory:NVMM),format=RGBA
+               -> nvdsosd process-mode=GPU -> nv3dsink
+```
+
+目标 Jetson 上用三路 V4L2 profile 连续运行 60 秒未出现上述错误。若目标设备仍
+复现，先用 `display:=false` 验证采集、推理和 ROS detection 发布；无窗口模式也是
+当前吞吐更高的运行方式。不要把 OSD 的 EGL 错误归因于前面的 TensorRT warning，
+除非日志先出现 `cuDCF` 或 `NVDSINFER_TENSORRT_ERROR`。
+
+## TensorRT engine 跨设备警告
+
+```text
+Using an engine plan file across different models of devices is not recommended
+```
+
+这条信息本身不是管线失败。当前 engine 已能在目标 Orin 上加载并持续产生 ROS
+消息，不要在稳定性测试前删除它。若要重建，必须使用目标设备自己的缓存目录，先
+停止其他 GPU 工作负载；如果出现 `Tactic Device request: 100MB Available: 74MB`
+或更低，说明显存不足，应该保留现有 engine，等待资源充足后再重建。
+
 > [!CAUTION]
 > 不要直接覆盖供应商的 camera `.dtbo`/`.dtb`，也不要未经完整回滚准备就在
 > `/boot/extlinux/extlinux.conf` 中加入显式 `FDT` 来修复 Argus。Jetson 的实际启动
@@ -177,6 +242,10 @@ EGL_PLATFORM=surfaceless ros2 launch deepstream deepstream.launch.py \
 ```
 
 全 V4L2 无窗口模式使用 surfaceless EGL；文件或混合 source 若使用其他 profile，仍应按容器运行方式检查 EGL/X11 资源。显示模式预期为 2x2 tile；没有图形会话时不要用 `display:=true` 作为验收命令。
+
+显示模式会额外经过 tiler、`nvdsosd` 和 `nv3dsink`。如果只需要检测吞吐，使用
+`display:=false`；如果需要窗口，先确认容器中的 `DISPLAY`、X11 授权和项目的
+`scripts/env.sh` 已加载。
 
 ## ROS 检测 topic 不存在
 

@@ -75,6 +75,7 @@ class PipelineBuildParams:
 
     # Merge config for nvsahipostprocess plugin
     merge_config: Optional[MergeConfig] = None
+    display_sink: str = "nv3dsink"
 
 
 @dataclass
@@ -613,10 +614,16 @@ def configure_tracker(
         )
     if "compute-hw" in tracker_section:
         _set_if_supported("compute-hw", tracker_section.getint("compute-hw"))
+    if "display-tracking-id" in tracker_section:
+        _set_if_supported(
+            "display-tracking-id",
+            tracker_section.getboolean("display-tracking-id"),
+        )
+    else:
+        _set_if_supported("display-tracking-id", True)
     if input_tensor_meta:
         _set_if_supported("input-tensor-meta", True)
         _set_if_supported("tensor-meta-gie-id", tensor_meta_gie_id)
-    _set_if_supported("display-tracking-id", True)
 
 
 def add_output_branches(
@@ -627,15 +634,23 @@ def add_output_branches(
     source_names: Optional[List[str]] = None,
     tiled_width: int = 1280,
     tiled_height: int = 720,
+    display_sink: str = "nv3dsink",
 ) -> Dict[str, Gst.Element]:
     """Attach display and per-source compressed annotated output branches."""
     source_names = list(source_names or ["camera_0"])
     tee = make_element("tee", "tee-output")
     queue_display = make_element("queue", "queue-display")
-    sink = (
-        make_element("nv3dsink", "display-sink")
-        if display
-        else make_element("fakesink", "display-sink")
+    if display and display_sink not in {
+        "fakesink",
+        "nveglglessink",
+        "nv3dsink",
+    }:
+        raise ValueError(
+            "display_sink must be one of: fakesink, nveglglessink, nv3dsink"
+        )
+    sink = make_element(
+        display_sink if display else "fakesink",
+        "display-sink",
     )
 
     pipeline.add(tee)
@@ -645,8 +660,11 @@ def add_output_branches(
     # Rendering may be unavailable when a container loses X11/EGL access.  Keep
     # that optional branch from applying backpressure to the metadata probe and
     # per-camera ROS publishers.
-    queue_display.set_property("leaky", 2)
-    queue_display.set_property("max-size-buffers", 1)
+    for element in (queue_display,):
+        element.set_property("leaky", 1)
+        element.set_property("max-size-buffers", 1)
+        element.set_property("max-size-bytes", 0)
+        element.set_property("max-size-time", 0)
     sink.set_property("async", False)
     sink.set_property("sync", False)
     sink.set_property("qos", False)
@@ -661,14 +679,28 @@ def add_output_branches(
         tiler = make_element("nvmultistreamtiler", "tiler")
         queue_tiler = make_element("queue", "queue-tiler")
         nvvidconv = make_element("nvvideoconvert", "nvvidconv")
+        caps_display = make_element("capsfilter", "caps-display-rgba")
         queue_conv = make_element("queue", "queue-conv")
         nvosd = make_element("nvdsosd", "nvosd")
         queue_output = make_element("queue", "queue-output")
         configure_tiler(tiler, tiled_width, tiled_height, len(source_names))
+        caps_display.set_property(
+            "caps",
+            Gst.Caps.from_string("video/x-raw(memory:NVMM),format=RGBA"),
+        )
+        # Keep the display surface in an explicit RGBA/NVMM format and make
+        # the display branch lossy so a stalled sink cannot block inference.
+        nvosd.set_property("process-mode", 1)
+        for element in (queue_tiler, queue_conv, queue_output):
+            element.set_property("leaky", 1)
+            element.set_property("max-size-buffers", 1)
+            element.set_property("max-size-bytes", 0)
+            element.set_property("max-size-time", 0)
         for element in [
             tiler,
             queue_tiler,
             nvvidconv,
+            caps_display,
             queue_conv,
             nvosd,
             queue_output,
@@ -679,6 +711,7 @@ def add_output_branches(
             tiler,
             queue_tiler,
             nvvidconv,
+            caps_display,
             queue_conv,
             nvosd,
             queue_output,

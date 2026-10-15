@@ -17,6 +17,17 @@ ros2 launch deepstream deepstream.launch.py \
 
 预期窗口为 2x2 tiler：前三个 tile 按 source 顺序显示，第四个 tile 为空。OSD 位于 tiler 后，因此显示的是合成布局；ROS bbox 仍使用 tiler 前的原图坐标。
 
+显示 sink 默认是 `nv3dsink`。如果目标设备的 X11/EGL sink 会占用推理所需的 GPU surface，保留完整 OSD 处理但关闭窗口输出进行稳定性验证：
+
+```bash
+ros2 launch deepstream deepstream.launch.py \
+  params_file:=config/v4l2_3cam.yaml \
+  display:=true display_sink:=fakesink \
+  publish_detections:=true
+```
+
+该模式仍运行 tiler 和 `nvdsosd`，但不创建可见窗口；它只用于验证 OSD、推理和 ROS 检测发布链路。
+
 ## 无窗口模式
 
 不需要可见窗口时，关闭显示。文件和全 V4L2 profile 都可以使用 surfaceless EGL：

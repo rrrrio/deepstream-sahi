@@ -105,6 +105,16 @@ def test_yolov11s_preprocess_config_is_valid_and_matches_batch_one():
     )
 
 
+@pytest.mark.parametrize("profile_name", ["csi_3cam.yaml", "v4l2_3cam.yaml"])
+def test_real_camera_profiles_pin_the_stable_iou_tracker(profile_name):
+    profile = _profile(profile_name)
+
+    assert profile["tracker_enabled"] is True
+    assert profile["tracker_config"] == (
+        "config/deepstream_tracker_iou_config.txt"
+    )
+
+
 @pytest.mark.parametrize("batch_size,total_rois", [(0, 27), (1, 0), (2, 27)])
 def test_sahi_batch_rejects_invalid_or_nondividing_values(
     batch_size, total_rois

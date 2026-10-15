@@ -377,6 +377,18 @@ static gboolean batch_transformation(GstNvSahiPreProcess *self,
     return FALSE;
   }
 
+  /*
+   * batch_insurf and batch_outsurf are reused for the next ROI batch.  The
+   * transform API may still read those descriptors after Async returns, so
+   * reusing them before the sync object completes can corrupt a later copy.
+   * Complete the transform here; the output thread only consumes finished
+   * surfaces and no longer needs to retain a sync object.
+   */
+  if (*sync_obj != NULL) {
+    NvBufSurfTransformSyncObjWait(*sync_obj, -1);
+    NvBufSurfTransformSyncObjDestroy(sync_obj);
+  }
+
   return TRUE;
 }
 

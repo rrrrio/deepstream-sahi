@@ -42,6 +42,7 @@ def test_launch_leaves_optional_values_to_the_selected_profile():
     assert defaults["publish_detections"] == ""
     assert defaults["publish_annotated"] == ""
     assert defaults["allowed_class_ids"] == ""
+    assert defaults["display_sink"] == ""
 
 
 def test_default_profile_is_the_three_file_headless_profile():
@@ -112,6 +113,7 @@ def _launch_context(values):
             "publish_detections": "",
             "publish_annotated": "",
             "allowed_class_ids": "",
+            "display_sink": "",
             "runtime_preflight": "true",
         }
     )
@@ -150,6 +152,15 @@ def test_class_id_launch_override_is_parsed_as_an_integer_array(monkeypatch):
     node = module._create_node(context)[0]
 
     assert node.kwargs["parameters"][1] == {"allowed_class_ids": [0, 2]}
+
+
+def test_display_sink_launch_override_is_passed_as_a_string(monkeypatch):
+    module = _load_launch_module(monkeypatch)
+
+    context = _launch_context({"display_sink": "fakesink"})
+    node = module._create_node(context)[0]
+
+    assert node.kwargs["parameters"][1] == {"display_sink": "fakesink"}
 
 
 def test_preflight_allows_a_mapped_jetson_runtime(monkeypatch):

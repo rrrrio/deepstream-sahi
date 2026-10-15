@@ -92,6 +92,7 @@ class DeepStreamNode(Node):
         self.declare_parameter("tracker_enabled", True)
         self.declare_parameter("tracker_config", "")
         self.declare_parameter("display", True)
+        self.declare_parameter("display_sink", "nv3dsink")
         self.declare_parameter("publish_annotated", False)
         self.declare_parameter("publish_detections", False)
         self.declare_parameter(
@@ -171,6 +172,17 @@ class DeepStreamNode(Node):
             self.get_parameter("tracker_enabled").value
         )
         self.display = bool(self.get_parameter("display").value)
+        self.display_sink = (
+            str(self.get_parameter("display_sink").value).strip().lower()
+        )
+        if self.display_sink not in {
+            "fakesink",
+            "nveglglessink",
+            "nv3dsink",
+        }:
+            raise ValueError(
+                "display_sink must be one of: fakesink, nveglglessink, nv3dsink"
+            )
         self.publish_annotated = bool(
             self.get_parameter("publish_annotated").value
         )
@@ -290,6 +302,7 @@ class DeepStreamNode(Node):
             tracker_enabled=self.tracker_enabled,
             tracker_config=tracker_config,
             display=self.display,
+            display_sink=self.display_sink,
             publish_annotated=self.publish_annotated,
             allowed_class_ids=self.allowed_class_ids,
             width=width,

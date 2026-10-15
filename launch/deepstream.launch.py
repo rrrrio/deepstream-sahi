@@ -14,6 +14,7 @@ _OPTIONAL_OVERRIDES = (
     "publish_detections",
     "publish_annotated",
     "allowed_class_ids",
+    "display_sink",
 )
 
 
@@ -60,7 +61,11 @@ def _create_node(context):
             overrides[name] = (
                 _parse_class_ids(value)
                 if name == "allowed_class_ids"
-                else _parse_bool(value)
+                else (
+                    value.strip()
+                    if name == "display_sink"
+                    else _parse_bool(value)
+                )
             )
     if overrides:
         parameters.append(overrides)
@@ -109,6 +114,7 @@ def generate_launch_description():
             DeclareLaunchArgument("publish_detections", default_value=""),
             DeclareLaunchArgument("publish_annotated", default_value=""),
             DeclareLaunchArgument("allowed_class_ids", default_value=""),
+            DeclareLaunchArgument("display_sink", default_value=""),
             DeclareLaunchArgument("runtime_preflight", default_value="true"),
             OpaqueFunction(function=_preflight_runtime),
             OpaqueFunction(function=_create_node),

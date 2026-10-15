@@ -15,7 +15,9 @@ network-color-format=0
 tensor-data-type=0
 tensor-name=images
 scaling-pool-memory-type=0
-scaling-pool-compute-hw=0
+# Use CUDA for camera-backed surfaces; the Jetson VIC path intermittently
+# fails NvBufSurfTransform copies during long-running SAHI batches.
+scaling-pool-compute-hw=1
 scaling-filter=0
 custom-lib-path=/opt/nvidia/deepstream/deepstream/lib/gst-plugins/libcustom2d_preprocess.so
 custom-tensor-preparation-function=CustomTensorPreparation

@@ -6,4 +6,4 @@ ll-lib-file=/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.s
 ll-config-file=/opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_IOU.yml
 enable-batch-process=1
 enable-past-frame=0
-display-tracking-id=1
+display-tracking-id=0
